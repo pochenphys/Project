@@ -1,0 +1,40 @@
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+
+# 環境變數檔案（包含敏感資訊）
+.env
+*.env
+!*.env.example
+LINE.env
+BANANA.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+venv_py311/
+env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系統檔案
+.DS_Store
+Thumbs.db
+
+# 臨時檔案和輸出
+*.jpg
+*.jpeg
+*.png
+*.log
+output/

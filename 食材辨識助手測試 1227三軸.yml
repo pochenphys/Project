@@ -1,0 +1,1022 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: 食材辨識助手測試
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/gemini:0.7.2@6e53b92877de2507ce83f2fc32ddf54a9662e4b5ef9e7e5d17bd18153a6485da
+    version: null
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.2.8@aae2be0913b8c6f0b80cff58e08d7a8b4c214569b41778413fcaea204561ff16
+    version: null
+kind: app
+version: 0.5.0
+workflow:
+  conversation_variables: []
+  environment_variables:
+  - description: ''
+    id: 2331c9b2-396c-4aec-b40c-befaa713209e
+    name: cantfind
+    selector:
+    - env
+    - cantfind
+    value: 此圖片中找不到食材，請換一張圖片再嘗試。
+    value_type: string
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1765878102464-source-1765882755587-target
+      source: '1765878102464'
+      sourceHandle: source
+      target: '1765882755587'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: 1766136735963-source-1766137148034-target
+      source: '1766136735963'
+      sourceHandle: source
+      target: '1766137148034'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 1766137148034-source-1766138309374-target
+      source: '1766137148034'
+      sourceHandle: source
+      target: '1766138309374'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: if-else
+      id: 1765882755587-source-1766146460161-target
+      source: '1765882755587'
+      sourceHandle: source
+      target: '1766146460161'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: 1766146460161-true-1766146490683-target
+      source: '1766146460161'
+      sourceHandle: 'true'
+      target: '1766146490683'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: 1766146460161-false-1766196342349-target
+      source: '1766146460161'
+      sourceHandle: 'false'
+      target: '1766196342349'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: 1766146460161-1c1395be-0ef9-4171-a9b9-37140d7aaad7-1766201522197-target
+      source: '1766146460161'
+      sourceHandle: 1c1395be-0ef9-4171-a9b9-37140d7aaad7
+      target: '1766201522197'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: 1766146460161-false-1766131614623-target
+      source: '1766146460161'
+      sourceHandle: 'false'
+      target: '1766131614623'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: 1766138309374-source-1765878387908-target
+      source: '1766138309374'
+      sourceHandle: source
+      target: '1765878387908'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 1766131614623-source-1766565230145-target
+      source: '1766131614623'
+      sourceHandle: source
+      target: '1766565230145'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: 1766565230145-source-1766136735963-target
+      source: '1766565230145'
+      sourceHandle: source
+      target: '1766136735963'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: 17667984798960-source-1765878387908-target
+      source: '17667984798960'
+      sourceHandle: source
+      target: '1765878387908'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: 17667984835590-source-1765878387908-target
+      source: '17667984835590'
+      sourceHandle: source
+      target: '1765878387908'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: 17667984619830-source-17667984690090-target
+      source: '17667984619830'
+      sourceHandle: source
+      target: '17667984690090'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 17667984690090-source-17667984798960-target
+      source: '17667984690090'
+      sourceHandle: source
+      target: '17667984798960'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 17667984751220-source-17667984835590-target
+      source: '17667984751220'
+      sourceHandle: source
+      target: '17667984835590'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: 17667984649210-source-17667984751220-target
+      source: '17667984649210'
+      sourceHandle: source
+      target: '17667984751220'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: 1766565230145-source-17667984619830-target
+      source: '1766565230145'
+      sourceHandle: source
+      target: '17667984619830'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: 1766565230145-source-17667984649210-target
+      source: '1766565230145'
+      sourceHandle: source
+      target: '17667984649210'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1766196342349-source-1765878387908-target
+      source: '1766196342349'
+      sourceHandle: source
+      target: '1765878387908'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 開始
+        type: start
+        variables:
+        - allowed_file_extensions: []
+          allowed_file_types:
+          - image
+          allowed_file_upload_methods:
+          - local_file
+          - remote_url
+          default: ''
+          hint: ''
+          label: foodphoto
+          max_length: 5
+          options: []
+          placeholder: ''
+          required: true
+          type: file-list
+          variable: foodphoto
+        - default: ''
+          hide: true
+          hint: ''
+          label: freshrecord
+          max_length: 48
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: freshrecord
+      height: 134
+      id: '1765878102464'
+      position:
+        x: 737.133724638441
+        y: 320
+      positionAbsolute:
+        x: 737.133724638441
+        y: 320
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1766196342349'
+          - text
+          value_type: string
+          variable: text
+        - value_selector:
+          - '1766137148034'
+          - text
+          value_type: string
+          variable: picture_1
+        - value_selector:
+          - '17667984690090'
+          - text
+          value_type: string
+          variable: picture_2
+        - value_selector:
+          - '17667984751220'
+          - text
+          value_type: string
+          variable: picture_3
+        - value_selector:
+          - '1766565230145'
+          - dish_1
+          value_type: string
+          variable: dish_1
+        - value_selector:
+          - '1766565230145'
+          - dish_2
+          value_type: string
+          variable: dish_2
+        - value_selector:
+          - '1766565230145'
+          - dish_3
+          value_type: string
+          variable: dish_3
+        selected: false
+        title: 輸出
+        type: end
+      height: 243
+      id: '1765878387908'
+      position:
+        x: 3749.8957094559355
+        y: 464.83051505094386
+      positionAbsolute:
+        x: 3749.8957094559355
+        y: 464.83051505094386
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params: {}
+          mode: chat
+          name: gemini-2.5-flash-image
+          provider: langgenius/gemini/google
+        prompt_template:
+        - id: 5f708c79-2997-44d9-bb00-2ddc4fd5d74a
+          role: system
+          text: '請根據{{#1765878102464.foodphoto#}}分析有甚麼食材，回傳食材與食材的份量
+
+            單純傳食材與份量，不用加其他文字。
+
+            回傳的訊息不要使用粗體字、斜體字等，直接回傳文字。
+
+            如果分量為"適量"請將份量改為1份
+
+            如果找不到食材，請回答 找不到食材'
+        selected: false
+        title: 食材檢測
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1765882755587'
+      position:
+        x: 1017.5412894428639
+        y: 341
+      positionAbsolute:
+        x: 1017.5412894428639
+        y: 341
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: dca398bd-b039-45be-bd02-90894c644c6e
+          role: system
+          text: '請根據{{#1765882755587.text#}}推薦三道食譜給使用者。
+
+            輸出格式如下:
+
+            菜餚名稱：
+
+
+            食材：
+
+            (列出所有食材，依序編號)
+
+
+            步驟：
+
+            (列出所有步驟，依序編號)//'
+        selected: false
+        title: 食譜生成
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1766131614623'
+      position:
+        x: 2163.7688641845066
+        y: 224.4733319189137
+      positionAbsolute:
+        x: 2163.7688641845066
+        y: 224.4733319189137
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: d500a987-1c6b-449f-8694-6544f668b77c
+          role: system
+          text: '根據{{#1766565230145.dish_1#}}想像並描述一下這道菜色長怎樣
+
+            請聚焦於該菜色長怎樣，不要想像他搭配了甚麼。'
+        - id: cf703c79-c072-4487-864e-e35498a12d70
+          role: user
+          text: ''
+        selected: false
+        title: 描述菜色A
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1766136735963'
+      position:
+        x: 2759.82015711594
+        y: 140.3224300493545
+      positionAbsolute:
+        x: 2759.82015711594
+        y: 140.3224300493545
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: e10ecd49-18ab-4f72-b78d-91d05622011d
+          role: system
+          text: "根請根據 {{#1766136735963.text#}} 的內容，把{{#1766565230145.dish_1#}}的菜餚名稱(須為中文)設定成放在圖片的最上方，生成「提供給圖像生成模型（如\
+            \ Stable Diffusion）」所需的參數。\n\n請嚴格遵守以下規則，否則輸出將被視為無效：\n\n【輸出格式規則（非常重要）】\n\
+            1. 最終輸出「只能是純 JSON」\n2. 不可使用 Markdown\n3. 不可使用 ```、```json 或任何程式碼區塊\n4.\
+            \ 不可在 JSON 前後輸出任何多餘文字\n5. 輸出內容必須可被 json.loads() 直接解析\n\n【輸出內容要求】\n請輸出一個\
+            \ JSON 物件，格式如下：\n{\n  \"prompt\": \"english prompt\",\n  \"image_size\"\
+            : \"1024x576\"\n}\n\n【prompt 生成規則】\n- 請從 {{#1766136735963.text#}} 中擷取「與圖片生成相關」的資訊\n\
+            - 將其轉換為「適合 Stable Diffusion 等圖片生成模型使用的英文提示詞」\n- 提示詞內容需盡可能豐富、具體、具畫面感\n\
+            - 圖像主題為「食物」，請讓畫面看起來可口、美味、有質感\n- 可包含：食物外觀、顏色、質地、光澤、擺盤、燈光、攝影風格等描述\n- 請勿加入與圖片無關的對話內容\n\
+            \n【image_size 選擇規則】\n- 請從對話內容中尋找與圖像尺寸相關的描述\n- 若有符合項目，請從下列選項中選擇「最接近的一個」：\n\
+            \  - 1024x1024\n  - 512x1024\n  - 576x1024\n  - 1024x576\n- 若對話中未出現任何與圖像尺寸相關的資訊，請預設使用：\n\
+            \  1024x576\n\n請再次確認：\n最終輸出只能是純 JSON，不可包含任何額外說明或標記。\n"
+        selected: false
+        title: A生成圖片提示詞
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1766137148034'
+      position:
+        x: 3041.342791693858
+        y: 140.3224300493545
+      positionAbsolute:
+        x: 3041.342791693858
+        y: 140.3224300493545
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "def main(arg1: str) -> dict:\n    import json\n    data = json.loads(arg1)\n\
+          \    return {\n        \"prompt\": data['prompt'],\n        \"image_size\"\
+          : data['image_size']\n    }\n"
+        code_language: python3
+        outputs:
+          image_size:
+            children: null
+            type: string
+          prompt:
+            children: null
+            type: string
+        selected: false
+        title: 取出提示詞A
+        type: code
+        variables:
+        - value_selector:
+          - '1766137148034'
+          - text
+          value_type: string
+          variable: arg1
+      height: 51
+      id: '1766138309374'
+      position:
+        x: 3363.3965695328648
+        y: 140.3224300493545
+      positionAbsolute:
+        x: 3363.3965695328648
+        y: 140.3224300493545
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: 8e223e5e-b2e8-4800-8433-40c763d1bd83
+            value: 找不到食材
+            varType: string
+            variable_selector:
+            - '1765882755587'
+            - text
+          id: 'true'
+          logical_operator: and
+        - case_id: 1c1395be-0ef9-4171-a9b9-37140d7aaad7
+          conditions:
+          - comparison_operator: contains
+            id: e85f8239-02d2-467e-be56-3ddb90bac629
+            value: 'True'
+            varType: string
+            variable_selector:
+            - '1765878102464'
+            - freshrecord
+          id: 1c1395be-0ef9-4171-a9b9-37140d7aaad7
+          logical_operator: and
+        selected: false
+        title: 條件分支
+        type: if-else
+      height: 171
+      id: '1766146460161'
+      position:
+        x: 1314.789100701133
+        y: 210.54128944286595
+      positionAbsolute:
+        x: 1314.789100701133
+        y: 210.54128944286595
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        outputs:
+        - value_selector:
+          - env
+          - cantfind
+          value_type: string
+          variable: text
+        selected: false
+        title: 找不到食材
+        type: end
+      height: 88
+      id: '1766146490683'
+      position:
+        x: 1694.7006615587359
+        y: 166.24827181094264
+      positionAbsolute:
+        x: 1694.7006615587359
+        y: 166.24827181094264
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: ec2aa298-f87f-40df-b9ef-53e93bcc99bd
+          role: system
+          text: '你是一個數據計算助手。請根據 {{#1765882755587.text#}} 計算食材的碳足跡與熱量，**僅輸出以下格式**：
+
+
+            碳足跡:
+
+            1. 食材名稱 (數量) - X kg CO2e
+
+            2. 食材名稱 (數量) - X kg CO2e
+
+            ...
+
+            碳足跡加總: X kg CO2e
+
+
+            熱量:
+
+            1. 食材名稱 (數量) - X 卡路里
+
+            2. 食材名稱 (數量) - X 卡路里
+
+            ...
+
+            熱量加總: X 卡路里
+
+
+            **規則：**
+
+            1. 不要任何前置說明或解釋。
+
+            2. 不要任何結尾說明或「最終輸出」之類文字。
+
+            3. 不要列出額外資訊。
+
+            4. 只列出食材名稱、數量、碳足跡、熱量，以及加總。
+
+            5. 編號需依序排列。
+
+            6. 數值需準確計算。
+
+            '
+        selected: false
+        title: 計算碳足跡與熱量
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1766196342349'
+      position:
+        x: 1680.7233043067586
+        y: 683.7469360485632
+      positionAbsolute:
+        x: 1680.7233043067586
+        y: 683.7469360485632
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        outputs:
+        - value_selector:
+          - '1765882755587'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 連接SQL
+        type: end
+      height: 87
+      id: '1766201522197'
+      position:
+        x: 1694.7006615587359
+        y: 48.37785887545681
+      positionAbsolute:
+        x: 1694.7006615587359
+        y: 48.37785887545681
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "def main(arg1: str):\n    dishes = [d.strip() for d in arg1.split(\"\
+          \\n\\n---\\n\\n\") if d.strip()]\n\n    return {\n        \"dish_1\": dishes[0]\
+          \ if len(dishes) > 0 else \"\",\n        \"dish_2\": dishes[1] if len(dishes)\
+          \ > 1 else \"\",\n        \"dish_3\": dishes[2] if len(dishes) > 2 else\
+          \ \"\",\n    }\n"
+        code_language: python3
+        outputs:
+          dish_1:
+            children: null
+            type: string
+          dish_2:
+            children: null
+            type: string
+          dish_3:
+            children: null
+            type: string
+        selected: false
+        title: 程式碼執行 3
+        type: code
+        variables:
+        - value_selector:
+          - '1766131614623'
+          - text
+          value_type: string
+          variable: arg1
+      height: 51
+      id: '1766565230145'
+      position:
+        x: 2495.868759450638
+        y: 154.1971746455123
+      positionAbsolute:
+        x: 2495.868759450638
+        y: 154.1971746455123
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: d500a987-1c6b-449f-8694-6544f668b77c
+          role: system
+          text: '根據{{#1766565230145.dish_2#}}想像並描述一下這道菜色長怎樣
+
+            請聚焦於該菜色長怎樣，不要想像他搭配了甚麼。'
+        - id: cf703c79-c072-4487-864e-e35498a12d70
+          role: user
+          text: ''
+        selected: false
+        title: 描述菜色B
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '17667984619830'
+      position:
+        x: 2759.82015711594
+        y: 277.4448055298776
+      positionAbsolute:
+        x: 2759.82015711594
+        y: 277.4448055298776
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: d500a987-1c6b-449f-8694-6544f668b77c
+          role: system
+          text: '根據{{#1766565230145.dish_3#}}想像並描述一下這道菜色長怎樣
+
+            請聚焦於該菜色長怎樣，不要想像他搭配了甚麼。'
+        - id: cf703c79-c072-4487-864e-e35498a12d70
+          role: user
+          text: ''
+        selected: false
+        title: 描述菜色C
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '17667984649210'
+      position:
+        x: 2759.82015711594
+        y: 399.7651923484928
+      positionAbsolute:
+        x: 2759.82015711594
+        y: 399.7651923484928
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: e10ecd49-18ab-4f72-b78d-91d05622011d
+          role: system
+          text: "根請根據 {{#17667984619830.text#}} 的內容，把{{#1766565230145.dish_2#}}的菜餚名稱(須為中文)設定成放在，生成「提供給圖像生成模型（如\
+            \ Stable Diffusion）」所需的參數。\n\n請嚴格遵守以下規則，否則輸出將被視為無效：\n\n【輸出格式規則（非常重要）】\n\
+            1. 最終輸出「只能是純 JSON」\n2. 不可使用 Markdown\n3. 不可使用 ```、```json 或任何程式碼區塊\n4.\
+            \ 不可在 JSON 前後輸出任何多餘文字\n5. 輸出內容必須可被 json.loads() 直接解析\n\n【輸出內容要求】\n請輸出一個\
+            \ JSON 物件，格式如下：\n{\n  \"prompt\": \"english prompt\",\n  \"image_size\"\
+            : \"1024x576\"\n}\n\n【prompt 生成規則】\n- 請從 {{#17667984619830.text#}} 中擷取「與圖片生成相關」的資訊\n\
+            - 將其轉換為「適合 Stable Diffusion 等圖片生成模型使用的英文提示詞」\n- 提示詞內容需盡可能豐富、具體、具畫面感\n\
+            - 圖像主題為「食物」，請讓畫面看起來可口、美味、有質感\n- 可包含：食物外觀、顏色、質地、光澤、擺盤、燈光、攝影風格等描述\n- 請勿加入與圖片無關的對話內容\n\
+            \n【image_size 選擇規則】\n- 請從對話內容中尋找與圖像尺寸相關的描述\n- 若有符合項目，請從下列選項中選擇「最接近的一個」：\n\
+            \  - 1024x1024\n  - 512x1024\n  - 576x1024\n  - 1024x576\n- 若對話中未出現任何與圖像尺寸相關的資訊，請預設使用：\n\
+            \  1024x576\n\n請再次確認：\n最終輸出只能是純 JSON，不可包含任何額外說明或標記。\n"
+        selected: false
+        title: B生成圖片提示詞
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '17667984690090'
+      position:
+        x: 3041.342791693858
+        y: 277.4448055298776
+      positionAbsolute:
+        x: 3041.342791693858
+        y: 277.4448055298776
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: e10ecd49-18ab-4f72-b78d-91d05622011d
+          role: system
+          text: "根請根據 {{#17667984649210.text#}} 的內容，把{{#1766565230145.dish_3#}}的菜餚名稱(須為中文)設定成放在，生成「提供給圖像生成模型（如\
+            \ Stable Diffusion）」所需的參數。\n\n請嚴格遵守以下規則，否則輸出將被視為無效：\n\n【輸出格式規則（非常重要）】\n\
+            1. 最終輸出「只能是純 JSON」\n2. 不可使用 Markdown\n3. 不可使用 ```、```json 或任何程式碼區塊\n4.\
+            \ 不可在 JSON 前後輸出任何多餘文字\n5. 輸出內容必須可被 json.loads() 直接解析\n\n【輸出內容要求】\n請輸出一個\
+            \ JSON 物件，格式如下：\n{\n  \"prompt\": \"english prompt\",\n  \"image_size\"\
+            : \"1024x576\"\n}\n\n【prompt 生成規則】\n- 請從 {{#17667984649210.text#}} 中擷取「與圖片生成相關」的資訊\n\
+            - 將其轉換為「適合 Stable Diffusion 等圖片生成模型使用的英文提示詞」\n- 提示詞內容需盡可能豐富、具體、具畫面感\n\
+            - 圖像主題為「食物」，請讓畫面看起來可口、美味、有質感\n- 可包含：食物外觀、顏色、質地、光澤、擺盤、燈光、攝影風格等描述\n- 請勿加入與圖片無關的對話內容\n\
+            \n【image_size 選擇規則】\n- 請從對話內容中尋找與圖像尺寸相關的描述\n- 若有符合項目，請從下列選項中選擇「最接近的一個」：\n\
+            \  - 1024x1024\n  - 512x1024\n  - 576x1024\n  - 1024x576\n- 若對話中未出現任何與圖像尺寸相關的資訊，請預設使用：\n\
+            \  1024x576\n\n請再次確認：\n最終輸出只能是純 JSON，不可包含任何額外說明或標記。\n"
+        selected: false
+        title: C生成圖片提示詞
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '17667984751220'
+      position:
+        x: 3041.342791693858
+        y: 399.7651923484928
+      positionAbsolute:
+        x: 3041.342791693858
+        y: 399.7651923484928
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "def main(arg1: str) -> dict:\n    import json\n    data = json.loads(arg1)\n\
+          \    return {\n        \"prompt\": data['prompt'],\n        \"image_size\"\
+          : data['image_size']\n    }\n"
+        code_language: python3
+        outputs:
+          image_size:
+            children: null
+            type: string
+          prompt:
+            children: null
+            type: string
+        selected: false
+        title: 取出提示詞B
+        type: code
+        variables:
+        - value_selector:
+          - '17667984690090'
+          - text
+          value_type: string
+          variable: arg1
+      height: 51
+      id: '17667984798960'
+      position:
+        x: 3363.3965695328648
+        y: 283.48531845919194
+      positionAbsolute:
+        x: 3363.3965695328648
+        y: 283.48531845919194
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "def main(arg1: str) -> dict:\n    import json\n    data = json.loads(arg1)\n\
+          \    return {\n        \"prompt\": data['prompt'],\n        \"image_size\"\
+          : data['image_size']\n    }\n"
+        code_language: python3
+        outputs:
+          image_size:
+            children: null
+            type: string
+          prompt:
+            children: null
+            type: string
+        selected: true
+        title: 取出提示詞C
+        type: code
+        variables:
+        - value_selector:
+          - '17667984751220'
+          - text
+          value_type: string
+          variable: arg1
+      height: 51
+      id: '17667984835590'
+      position:
+        x: 3358.4622386965457
+        y: 399.7651923484928
+      positionAbsolute:
+        x: 3358.4622386965457
+        y: 399.7651923484928
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    viewport:
+      x: -1638.1848046508403
+      y: -0.5046470412873987
+      zoom: 0.5764745964346059
+  rag_pipeline_variables: []

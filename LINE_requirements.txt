@@ -1,0 +1,21 @@
+# LINE Bot 系統所需套件
+# 用於 record.py, LINE_Bot_Router.py, Line2Dify.py
+
+# Web 框架
+flask>=2.3.0
+
+# HTTP 請求
+requests>=2.31.0
+
+# 環境變數管理
+python-dotenv>=1.0.0
+
+# MySQL 資料庫連接
+pymysql>=1.1.0
+cryptography>=41.0.0  # pymysql 的加密支援
+
+# 圖像處理
+Pillow>=10.0.0
+
+# LINE Bot SDK (可選，如果使用官方 SDK)
+line-bot-sdk>=3.0.0
