@@ -7,10 +7,11 @@ import os
 import re
 import time
 import base64
+import threading
 from typing import Dict, Optional, List
 from flask import Flask, request, abort
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # 載入環境變數
 # override=False: Cloud Run 環境變數優先，本地開發時如果 .env 文件存在也會載入
@@ -40,6 +41,9 @@ app = Flask(__name__)
 EMPTY_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 EMPTY_PNG_DATA = base64.b64decode(EMPTY_PNG_B64)
 
+# 台灣時區（UTC+8）
+TAIWAN_TZ = timezone(timedelta(hours=8))
+
 # 從環境變數讀取設定
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
@@ -54,11 +58,9 @@ dify_client = DifyAPIClient(DIFY_API_KEY, DIFY_API_ENDPOINT)
 # 初始化食譜功能控制器
 recipe_flow_controller = MessageFlowController(dify_client, line_client)
 
-# 使用 record.py 中的 db_manager 實例（共享同一個資料庫連接）
-# 確保連接已建立
-if not db_manager.connection:
-    if not db_manager.connect():
-        print("警告: 資料庫連接失敗，查看功能可能無法使用")
+# 使用 record.py 中的 db_manager 實例
+# 注意：現在使用 get_connection() context manager，每次操作都會建立新連線
+# 不再維護持久連線，避免 "MySQL server has gone away" 錯誤
 
 # 用戶功能狀態管理（追蹤每個用戶當前使用的功能）
 # 格式: {user_id: 'function_name'}
@@ -94,39 +96,34 @@ def query_user_food_records(user_id: str) -> List[Dict]:
         List[Dict]: 食物記錄列表，每個記錄包含 food_name, quantity, storage_time
     """
     try:
-        # 確保資料庫連接
-        if not db_manager.connection:
-            if not db_manager.connect():
-                print("錯誤: 無法連接到資料庫")
-                return []
-        
-        with db_manager.connection.cursor() as cursor:
-            # 查詢該用戶的所有記錄（使用 user_id）
-            sql = """
-            SELECT 
-                id,
-                food_name AS 食品,
-                quantity AS 數量,
-                storage_time AS 購買時間
-            FROM foods
-            WHERE username = %s
-            ORDER BY storage_time ASC
-            """
-            cursor.execute(sql, (user_id,))
-            results = cursor.fetchall()
-            
-            # 轉換為字典列表
-            records = []
-            for row in results:
-                records.append({
-                    'id': row[0],  # id
-                    'food_name': row[1],  # 食品
-                    'quantity': row[2],   # 數量
-                    'storage_time': row[3]  # 購買時間
-                })
-            
-            print(f"✓ 查詢到 {len(records)} 筆記錄（user_id: {user_id}）")
-            return records
+        # 使用 context manager 每次建立新連線（避免連線過期問題）
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                # 查詢該用戶的所有記錄（使用 user_id）
+                sql = """
+                SELECT 
+                    id,
+                    food_name AS 食品,
+                    quantity AS 數量,
+                    storage_time AS 購買時間
+                FROM foods
+                WHERE username = %s
+                ORDER BY storage_time ASC
+                """
+                cursor.execute(sql, (user_id,))
+                results = cursor.fetchall()
+                
+                # 轉換為字典列表
+                records = []
+                for row in results:
+                    records.append({
+                        'id': row[0],  # id
+                        'food_name': row[1],  # 食品
+                        'quantity': row[2],   # 數量
+                        'storage_time': row[3]  # 購買時間
+                    })
+                
+                return records
             
     except Exception as e:
         print(f"✗ 查詢資料庫失敗: {e}")
@@ -147,39 +144,34 @@ def query_food_records_by_name(username: str, food_name: str) -> List[Dict]:
         List[Dict]: 食物記錄列表，每個記錄包含 id, food_name, quantity, storage_time
     """
     try:
-        # 確保資料庫連接
-        if not db_manager.connection:
-            if not db_manager.connect():
-                print("錯誤: 無法連接到資料庫")
-                return []
-        
-        with db_manager.connection.cursor() as cursor:
-            # 查詢該用戶的特定食品記錄，按時間升序（最舊的在前）
-            sql = """
-            SELECT 
-                id,
-                food_name,
-                quantity,
-                storage_time
-            FROM foods
-            WHERE username = %s AND food_name = %s
-            ORDER BY storage_time ASC
-            """
-            cursor.execute(sql, (username, food_name))
-            results = cursor.fetchall()
-            
-            # 轉換為字典列表
-            records = []
-            for row in results:
-                records.append({
-                    'id': row[0],
-                    'food_name': row[1],
-                    'quantity': row[2],
-                    'storage_time': row[3]
-                })
-            
-            print(f"✓ 查詢到 {len(records)} 筆 {food_name} 記錄（使用者: {username}）")
-            return records
+        # 使用 context manager 每次建立新連線（避免連線過期問題）
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                # 查詢該用戶的特定食品記錄，按時間升序（最舊的在前）
+                sql = """
+                SELECT 
+                    id,
+                    food_name,
+                    quantity,
+                    storage_time
+                FROM foods
+                WHERE username = %s AND food_name = %s
+                ORDER BY storage_time ASC
+                """
+                cursor.execute(sql, (username, food_name))
+                results = cursor.fetchall()
+                
+                # 轉換為字典列表
+                records = []
+                for row in results:
+                    records.append({
+                        'id': row[0],
+                        'food_name': row[1],
+                        'quantity': row[2],
+                        'storage_time': row[3]
+                    })
+                
+                return records
             
     except Exception as e:
         print(f"✗ 查詢資料庫失敗: {e}")
@@ -201,12 +193,6 @@ def deduct_food_quantity(username: str, food_name: str, deduct_amount: float) ->
         Dict: 包含 success, remaining_amount, updated_records, deleted_records
     """
     try:
-        # 確保資料庫連接
-        if not db_manager.connection:
-            if not db_manager.connect():
-                print("錯誤: 無法連接到資料庫")
-                return {'success': False, 'message': '資料庫連接失敗'}
-        
         # 查詢該食品的所有記錄（按時間升序）
         records = query_food_records_by_name(username, food_name)
         
@@ -223,46 +209,46 @@ def deduct_food_quantity(username: str, food_name: str, deduct_amount: float) ->
         updated_records = []
         deleted_records = []
         
-        with db_manager.connection.cursor() as cursor:
-            for record in records:
-                if remaining_amount <= 0:
-                    break
+        # 使用 context manager 每次建立新連線（避免連線過期問題）
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                for record in records:
+                    if remaining_amount <= 0:
+                        break
+                    
+                    record_id = record['id']
+                    # 確保數量轉換為浮點數
+                    current_quantity = float(record['quantity']) if record['quantity'] is not None else None
+                    
+                    # 如果數量為 NULL，跳過
+                    if current_quantity is None:
+                        continue
+                    
+                    if current_quantity <= remaining_amount:
+                        # 當前記錄的數量不足或剛好，刪除這筆記錄
+                        delete_sql = "DELETE FROM foods WHERE id = %s"
+                        cursor.execute(delete_sql, (record_id,))
+                        deleted_records.append({
+                            'id': record_id,
+                            'food_name': food_name,
+                            'quantity': float(current_quantity)
+                        })
+                        remaining_amount -= current_quantity
+                    else:
+                        # 當前記錄的數量足夠，更新數量
+                        new_quantity = float(current_quantity - remaining_amount)
+                        update_sql = "UPDATE foods SET quantity = %s WHERE id = %s"
+                        cursor.execute(update_sql, (new_quantity, record_id))
+                        updated_records.append({
+                            'id': record_id,
+                            'food_name': food_name,
+                            'old_quantity': float(current_quantity),
+                            'new_quantity': float(new_quantity),
+                            'deducted': float(remaining_amount)
+                        })
+                        remaining_amount = 0
                 
-                record_id = record['id']
-                # 確保數量轉換為浮點數
-                current_quantity = float(record['quantity']) if record['quantity'] is not None else None
-                
-                # 如果數量為 NULL，跳過
-                if current_quantity is None:
-                    continue
-                
-                if current_quantity <= remaining_amount:
-                    # 當前記錄的數量不足或剛好，刪除這筆記錄
-                    delete_sql = "DELETE FROM foods WHERE id = %s"
-                    cursor.execute(delete_sql, (record_id,))
-                    deleted_records.append({
-                        'id': record_id,
-                        'food_name': food_name,
-                        'quantity': float(current_quantity)
-                    })
-                    remaining_amount -= current_quantity
-                    print(f"✓ 刪除記錄 ID {record_id}: {food_name} {current_quantity}")
-                else:
-                    # 當前記錄的數量足夠，更新數量
-                    new_quantity = float(current_quantity - remaining_amount)
-                    update_sql = "UPDATE foods SET quantity = %s WHERE id = %s"
-                    cursor.execute(update_sql, (new_quantity, record_id))
-                    updated_records.append({
-                        'id': record_id,
-                        'food_name': food_name,
-                        'old_quantity': float(current_quantity),
-                        'new_quantity': float(new_quantity),
-                        'deducted': float(remaining_amount)
-                    })
-                    print(f"✓ 更新記錄 ID {record_id}: {food_name} {current_quantity} -> {new_quantity} (扣除 {remaining_amount})")
-                    remaining_amount = 0
-            
-            db_manager.connection.commit()
+                conn.commit()
         
         return {
             'success': True,
@@ -276,8 +262,6 @@ def deduct_food_quantity(username: str, food_name: str, deduct_amount: float) ->
         print(f"✗ 扣除數量失敗: {e}")
         import traceback
         traceback.print_exc()
-        if db_manager.connection:
-            db_manager.connection.rollback()
         return {
             'success': False,
             'message': f'扣除數量時發生錯誤: {str(e)}',
@@ -296,50 +280,42 @@ def delete_food_record_by_id(record_id: int) -> Dict:
         Dict: 包含 success, message, deleted_record
     """
     try:
-        # 確保資料庫連接
-        if not db_manager.connection:
-            if not db_manager.connect():
-                print("錯誤: 無法連接到資料庫")
-                return {'success': False, 'message': '資料庫連接失敗'}
-        
-        with db_manager.connection.cursor() as cursor:
-            # 先查詢記錄信息（用於返回）
-            select_sql = "SELECT id, food_name, quantity, storage_time FROM foods WHERE id = %s"
-            cursor.execute(select_sql, (record_id,))
-            record = cursor.fetchone()
-            
-            if not record:
-                return {
-                    'success': False,
-                    'message': f'找不到 ID {record_id} 的記錄'
+        # 使用 context manager 每次建立新連線（避免連線過期問題）
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                # 先查詢記錄信息（用於返回）
+                select_sql = "SELECT id, food_name, quantity, storage_time FROM foods WHERE id = %s"
+                cursor.execute(select_sql, (record_id,))
+                record = cursor.fetchone()
+                
+                if not record:
+                    return {
+                        'success': False,
+                        'message': f'找不到 ID {record_id} 的記錄'
+                    }
+                
+                # 刪除記錄
+                delete_sql = "DELETE FROM foods WHERE id = %s"
+                cursor.execute(delete_sql, (record_id,))
+                conn.commit()
+                
+                deleted_record = {
+                    'id': record[0],
+                    'food_name': record[1],
+                    'quantity': record[2],
+                    'storage_time': record[3]
                 }
-            
-            # 刪除記錄
-            delete_sql = "DELETE FROM foods WHERE id = %s"
-            cursor.execute(delete_sql, (record_id,))
-            db_manager.connection.commit()
-            
-            deleted_record = {
-                'id': record[0],
-                'food_name': record[1],
-                'quantity': record[2],
-                'storage_time': record[3]
-            }
-            
-            print(f"✓ 刪除記錄 ID {record_id}: {deleted_record['food_name']}")
-            
-            return {
-                'success': True,
-                'message': f'成功刪除記錄 ID {record_id}',
-                'deleted_record': deleted_record
-            }
+                
+                return {
+                    'success': True,
+                    'message': f'成功刪除記錄 ID {record_id}',
+                    'deleted_record': deleted_record
+                }
             
     except Exception as e:
         print(f"✗ 刪除記錄失敗: {e}")
         import traceback
         traceback.print_exc()
-        if db_manager.connection:
-            db_manager.connection.rollback()
         return {
             'success': False,
             'message': f'刪除記錄時發生錯誤: {str(e)}'
@@ -510,7 +486,6 @@ class FunctionRouter:
             # 獲取用戶資訊（用於顯示）
             user_profile = get_user_profile(user_id)
             username = user_profile.get('displayName', '未知用戶') if user_profile else '未知用戶'
-            print(f"查看功能：使用者 {user_id} (USERNAME: {username})")
             
             # 查詢資料庫（使用 user_id）
             records = query_user_food_records(user_id)
@@ -559,8 +534,22 @@ class FunctionRouter:
                         
                         # 計算已購買時間（從購買時間到現在的距離）
                         if purchase_datetime:
-                            now = datetime.now()
+                            # 確保 purchase_datetime 使用台灣時區
+                            if purchase_datetime.tzinfo is None:
+                                # 如果沒有時區信息，假設它是台灣時區
+                                purchase_datetime = purchase_datetime.replace(tzinfo=TAIWAN_TZ)
+                            elif purchase_datetime.tzinfo != TAIWAN_TZ:
+                                # 如果有時區但不是台灣時區，轉換為台灣時區
+                                purchase_datetime = purchase_datetime.astimezone(TAIWAN_TZ)
+                            
+                            # 獲取當前台灣時區時間
+                            now = datetime.now(TAIWAN_TZ)
+                            
                             elapsed = now - purchase_datetime
+                            
+                            # 確保時間差不會變成負數
+                            if elapsed.total_seconds() < 0:
+                                elapsed = timedelta(0)
                             
                             # 格式化時間差
                             if elapsed.days > 0:
@@ -587,18 +576,12 @@ class FunctionRouter:
             # 查看功能執行完後，清除用戶狀態（回到初始狀態）
             if user_id in user_function_state:
                 del user_function_state[user_id]
-                print(f"✓ 查看功能執行完畢，已清除用戶 {user_id} 的功能狀態")
             
             # 發送訊息
-            print(f"[查看功能] 準備發送訊息給用戶 {user_id}，訊息長度: {len(message)}")
             if reply_token:
-                result = line_client.reply_message(reply_token, message)
-                print(f"[查看功能] 使用 reply_token 發送結果: {result}")
-                return result
+                return line_client.reply_message(reply_token, message)
             else:
-                result = line_client.send_text_message(user_id, message)
-                print(f"[查看功能] 使用 push 訊息發送結果: {result}")
-                return result
+                return line_client.send_text_message(user_id, message)
                 
         except Exception as e:
             print(f"處理查看功能失敗: {e}")
@@ -628,7 +611,6 @@ class FunctionRouter:
             # 獲取用戶資訊（用於顯示）
             user_profile = get_user_profile(user_id)
             username = user_profile.get('displayName', '未知用戶') if user_profile else '未知用戶'
-            print(f"刪除功能：使用者 {user_id} (USERNAME: {username})")
             
             # 設定用戶功能狀態為刪除模式
             user_function_state[user_id] = 'delete'
@@ -697,15 +679,10 @@ class FunctionRouter:
                 message += "• 輸入「退出」可結束刪除功能"
             
             # 發送訊息
-            print(f"[刪除功能] 準備發送訊息給用戶 {user_id}，訊息長度: {len(message)}")
             if reply_token:
-                result = line_client.reply_message(reply_token, message)
-                print(f"[刪除功能] 使用 reply_token 發送結果: {result}")
-                return result
+                return line_client.reply_message(reply_token, message)
             else:
-                result = line_client.send_text_message(user_id, message)
-                print(f"[刪除功能] 使用 push 訊息發送結果: {result}")
-                return result
+                return line_client.send_text_message(user_id, message)
                 
         except Exception as e:
             print(f"處理刪除功能失敗: {e}")
@@ -889,8 +866,6 @@ class FunctionRouter:
             # 獲取用戶資訊（USERNAME）
             user_profile = get_user_profile(user_id)
             username = user_profile.get('displayName', '未知用戶') if user_profile else '未知用戶'
-            print(f"處理消耗輸入：使用者 {user_id} (USERNAME: {username})")
-            print(f"輸入內容: {text}")
             
             # 檢查是否為按編號刪除（格式：純數字 或 "數字 數字"）
             text_stripped = text.strip()
@@ -956,26 +931,24 @@ class FunctionRouter:
                         # 部分扣除：更新數量
                         new_quantity = current_quantity_float - deduct_amount
                         try:
-                            if not db_manager.connection:
-                                if not db_manager.connect():
-                                    raise Exception("資料庫連接失敗")
-                            
-                            with db_manager.connection.cursor() as cursor:
-                                update_sql = "UPDATE foods SET quantity = %s WHERE id = %s"
-                                cursor.execute(update_sql, (new_quantity, record_id))
-                                db_manager.connection.commit()
-                                
-                                # 更新映射中的數量
-                                record_info['quantity'] = new_quantity
-                                
-                                success_msg = (
-                                    f"✅ 已更新編號 {record_number} 的記錄：{food_name}\n"
-                                    f"   數量：{current_quantity} -> {new_quantity} (扣除 {deduct_amount})"
-                                )
-                                if reply_token:
-                                    return line_client.reply_message(reply_token, success_msg)
-                                else:
-                                    return line_client.send_text_message(user_id, success_msg)
+                            # 使用 context manager 每次建立新連線（避免連線過期問題）
+                            with db_manager.get_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    update_sql = "UPDATE foods SET quantity = %s WHERE id = %s"
+                                    cursor.execute(update_sql, (new_quantity, record_id))
+                                    conn.commit()
+                                    
+                                    # 更新映射中的數量
+                                    record_info['quantity'] = new_quantity
+                                    
+                                    success_msg = (
+                                        f"✅ 已更新編號 {record_number} 的記錄：{food_name}\n"
+                                        f"   數量：{current_quantity} -> {new_quantity} (扣除 {deduct_amount})"
+                                    )
+                                    if reply_token:
+                                        return line_client.reply_message(reply_token, success_msg)
+                                    else:
+                                        return line_client.send_text_message(user_id, success_msg)
                         except Exception as e:
                             print(f"更新記錄失敗: {e}")
                             error_msg = f"❌ 更新記錄失敗：{str(e)}"
@@ -1025,8 +998,6 @@ class FunctionRouter:
             for item in consumption_items:
                 food_name = item['food_name']
                 deduct_amount = item['quantity']
-                
-                print(f"處理消耗：{food_name} {deduct_amount}")
                 
                 # 扣除數量
                 result = deduct_food_quantity(username, food_name, deduct_amount)
@@ -1165,9 +1136,10 @@ def webhook():
         # 處理 Postback 事件（食譜選擇）
         for postback_event in postback_events:
             user_id = postback_event['user_id']
+            reply_token = postback_event.get('reply_token')  # 獲取 reply_token
             data = postback_event['data']
             
-            print(f"收到 Postback 事件（用戶: {user_id}, data: {data}）")
+            print(f"收到 Postback 事件（用戶: {user_id}, data: {data}, reply_token: {'有' if reply_token else '無'}）")
             
             try:
                 # 解析選擇的食譜編號
@@ -1193,21 +1165,33 @@ def webhook():
                             else:
                                 message = cleaned_recipe
                             
-                            # 使用 push message 發送（reply_token 已經用於發送 Image Carousel）
-                            line_client.send_text_message(user_id, message)
+                            # 使用 reply_token 發送（如果有的話）
+                            if reply_token:
+                                line_client.reply_message(reply_token, message)
+                            else:
+                                line_client.send_text_message(user_id, message)
                             print(f"已發送食譜 {recipe_num} 給用戶 {user_id}")
                         else:
                             error_msg = f"找不到編號 {recipe_num} 的食譜"
-                            line_client.send_text_message(user_id, error_msg)
+                            if reply_token:
+                                line_client.reply_message(reply_token, error_msg)
+                            else:
+                                line_client.send_text_message(user_id, error_msg)
                             print(f"[錯誤] {error_msg}")
                     else:
                         error_msg = "食譜數據已過期，請重新上傳圖片"
-                        line_client.send_text_message(user_id, error_msg)
+                        if reply_token:
+                            line_client.reply_message(reply_token, error_msg)
+                        else:
+                            line_client.send_text_message(user_id, error_msg)
                         print(f"[錯誤] 用戶 {user_id} 的食譜數據不存在")
             except (ValueError, IndexError) as e:
                 print(f"解析 Postback 數據失敗: {e}")
                 error_msg = "處理請求時發生錯誤，請重新上傳圖片"
-                line_client.send_text_message(user_id, error_msg)
+                if reply_token:
+                    line_client.reply_message(reply_token, error_msg)
+                else:
+                    line_client.send_text_message(user_id, error_msg)
         
         # 處理文字訊息（功能路由）
         for text_event in text_events:
@@ -1227,7 +1211,7 @@ def webhook():
             print(f"收到用戶 {user_id} 的 {len(image_events)} 張圖片（當前功能: {current_function}）")
             
             if current_function == 'recipe':
-                # 路由到食譜功能
+                # 路由到食譜功能（異步處理，避免 webhook 超時）
                 # 只在第一次收到圖片時發送"請稍等"訊息（避免重複發送）
                 current_time = time.time()
                 last_sent_time = user_wait_message_sent.get(user_id, 0)
@@ -1239,11 +1223,24 @@ def webhook():
                     user_wait_message_sent[user_id] = current_time
                     print(f"已發送「請稍等」訊息給用戶 {user_id}")
                 
-                # 處理圖片（保留 reply_token 給後續結果發送使用）
-                if len(image_events) == 1:
-                    recipe_flow_controller.process_line_image(image_events[0])
-                else:
-                    recipe_flow_controller.process_line_images(image_events)
+                # 異步處理圖片（在背景線程中執行，避免阻塞 webhook）
+                def process_images_async(events):
+                    """異步處理圖片事件"""
+                    try:
+                        if len(events) == 1:
+                            recipe_flow_controller.process_line_image(events[0])
+                        else:
+                            recipe_flow_controller.process_line_images(events)
+                    except Exception as e:
+                        print(f"[錯誤] 異步處理圖片失敗: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        error_msg = "處理圖片時發生錯誤，請稍後再試。"
+                        line_client.send_text_message(user_id, error_msg)
+                
+                # 在背景線程中處理圖片
+                threading.Thread(target=process_images_async, args=(image_events,), daemon=True).start()
+                print(f"已啟動異步處理任務（用戶: {user_id}, 圖片數: {len(image_events)}）")
             elif current_function == 'record':
                 # 路由到記錄功能（調用 record.py）
                 for image_event in image_events:

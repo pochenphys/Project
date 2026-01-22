@@ -1,5 +1,6 @@
 """
 LINE OA 與 Dify 整合系統
+根據規格文件 Line_test.md 實作
 """
 
 import os
@@ -9,13 +10,29 @@ import hmac
 import hashlib
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 from flask import Flask, request, abort
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from urllib3.exceptions import MaxRetryError, SSLError as Urllib3SSLError
+import ssl
 from dotenv import load_dotenv
 from PIL import Image
 import io
+# 不再使用 Google Gen AI SDK，改用直接 REST API 調用以提升性能
+
+# 嘗試導入 google.auth（用於 OAuth2 認證）
+try:
+    from google.auth import default
+    from google.auth.transport.requests import Request
+    GOOGLE_AUTH_AVAILABLE = True
+except ImportError:
+    GOOGLE_AUTH_AVAILABLE = False
+    print("[提示] google-auth 套件未安裝，Generative Language API 將使用 Metadata Server Token")
+    print("[提示] 如需完整支援，請執行: pip install google-auth")
 
 
 # 載入環境變數
@@ -28,7 +45,20 @@ DIFY_API_KEY = os.getenv('DIFY_API_KEY')
 DIFY_API_ENDPOINT = os.getenv('DIFY_API_ENDPOINT', 'https://api.dify.ai')
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+# Vertex AI 設定（使用服務帳號認證，不使用 API Key）
+# GEMINI_API_KEY 已移除，改用服務帳號認證
+VERTEX_AI_PROJECT_ID = os.getenv('VERTEX_AI_PROJECT_ID', '')
+VERTEX_AI_LOCATION = os.getenv('VERTEX_AI_LOCATION', 'us-central1')
+
+# 多個 Project ID 設定（用於分散並行請求，提高穩定性）
+# 格式：用逗號分隔，例如：VERTEX_AI_PROJECT_IDS=project1,project2,project3
+# 如果設定，會輪流使用這些 Project ID 來分散請求負載
+VERTEX_AI_PROJECT_IDS_STR = os.getenv('VERTEX_AI_PROJECT_IDS', '')
+if VERTEX_AI_PROJECT_IDS_STR:
+    VERTEX_AI_PROJECT_IDS = [pid.strip() for pid in VERTEX_AI_PROJECT_IDS_STR.split(',') if pid.strip()]
+else:
+    # 如果沒有設定多個 Project ID，使用單個 Project ID（向後兼容）
+    VERTEX_AI_PROJECT_IDS = [VERTEX_AI_PROJECT_ID] if VERTEX_AI_PROJECT_ID else []
 
 # 驗證必要的環境變數
 if not DIFY_API_KEY:
@@ -165,6 +195,36 @@ class LINEAPIClient:
             'Authorization': f'Bearer {self.access_token}',
             'Content-Type': 'application/json'
         }
+        # 使用 Session 复用连接，提高性能
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+        
+        # 配置重试策略（处理 SSL 错误和连接问题）
+        retry_strategy = Retry(
+            total=5,  # 最多重试5次（增加重试次数以应对不稳定的 SSL 连接）
+            backoff_factor=2,  # 重试间隔：2秒, 4秒, 8秒, 16秒, 32秒（更长的等待时间）
+            status_forcelist=[429, 500, 502, 503, 504],  # 这些状态码会重试
+            allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
+            raise_on_status=False
+        )
+        
+        # 创建适配器并配置 SSL（增加连接池大小以提高稳定性）
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,  # 连接池大小
+            pool_maxsize=20,  # 最大连接数
+            pool_block=False  # 不阻塞连接
+        )
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+        
+        # 配置 SSL 上下文（更宽松的 SSL 验证，避免 SSL 错误）
+        # 注意：在生产环境中，应该使用严格的 SSL 验证
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except:
+            pass
     
     def download_image(self, message_id: str) -> Optional[bytes]:
         """
@@ -178,19 +238,85 @@ class LINEAPIClient:
         Returns:
             Optional[bytes]: 圖片資料，失敗返回 None
         """
-        try:
-            url = LINE_CONTENT_URL.format(message_id=message_id)
-            headers = {
-                'Authorization': f'Bearer {self.access_token}'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
-            
-            return response.content
-        except Exception as e:
-            print(f"下載圖片失敗: {str(e)}")
-            return None
+        max_retries = 5  # 增加重試次數以應對不穩定的 SSL 連接
+        for attempt in range(max_retries):
+            try:
+                url = LINE_CONTENT_URL.format(message_id=message_id)
+                headers = {
+                    'Authorization': f'Bearer {self.access_token}'
+                }
+                
+                # 使用 session 复用连接，增加超時時間以應對慢速連接
+                # timeout=(連接超時, 讀取超時)
+                response = self.session.get(url, headers=headers, timeout=(10, 90))
+                response.raise_for_status()
+                
+                return response.content
+            except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # 指数退避：1秒, 2秒, 4秒, 8秒, 16秒
+                    print(f"SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                    time.sleep(wait_time)
+                    # 在重試前，嘗試關閉舊連接並重新建立（避免使用已損壞的連接）
+                    try:
+                        # 只關閉連接，不刪除 session 對象（保持配置）
+                        if hasattr(self.session, 'close'):
+                            # 創建新的 session 以確保連接乾淨
+                            old_session = self.session
+                            self.session = requests.Session()
+                            self.session.headers.update(self.headers)
+                            # 重新配置適配器
+                            retry_strategy = Retry(
+                                total=5,
+                                backoff_factor=2,
+                                status_forcelist=[429, 500, 502, 503, 504],
+                                allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
+                                raise_on_status=False
+                            )
+                            adapter = HTTPAdapter(
+                                max_retries=retry_strategy,
+                                pool_connections=10,
+                                pool_maxsize=20,
+                                pool_block=False
+                            )
+                            self.session.mount("https://", adapter)
+                            self.session.mount("http://", adapter)
+                            # 關閉舊 session
+                            old_session.close()
+                    except Exception as reconnect_error:
+                        print(f"[警告] 重新建立連接時發生錯誤: {reconnect_error}，繼續使用現有連接")
+                    continue
+                else:
+                    print(f"下載圖片失敗（SSL錯誤，已重试{max_retries}次）: {str(e)}")
+                    print(f"[提示] 這可能是 LINE API 伺服器的暫時性問題，請稍後再試")
+                    return None
+            except requests.exceptions.Timeout as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"請求超時（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"下載圖片失敗（請求超時，已重试{max_retries}次）: {str(e)}")
+                    return None
+            except requests.exceptions.ConnectionError as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"連接錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"下載圖片失敗（連接錯誤，已重试{max_retries}次）: {str(e)}")
+                    return None
+            except Exception as e:
+                print(f"下載圖片失敗: {str(e)}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"等待 {wait_time}秒後重試...")
+                    time.sleep(wait_time)
+                    continue
+                return None
+        return None
     
     def send_text_message(self, user_id: str, text: str) -> bool:
         """
@@ -217,7 +343,8 @@ class LINEAPIClient:
                 ]
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            # 使用 session 复用连接
+            response = self.session.post(url, json=payload, timeout=10)
             response.raise_for_status()
             return True
         except Exception as e:
@@ -237,24 +364,37 @@ class LINEAPIClient:
         Returns:
             bool: 是否成功回覆
         """
-        try:
-            url = LINE_REPLY_URL
-            payload = {
-                'replyToken': reply_token,
-                'messages': [
-                    {
-                        'type': 'text',
-                        'text': text
-                    }
-                ]
-            }
-            
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
-            response.raise_for_status()
-            return True
-        except Exception as e:
-            print(f"回覆訊息失敗: {str(e)}")
-            return False
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                url = LINE_REPLY_URL
+                payload = {
+                    'replyToken': reply_token,
+                    'messages': [
+                        {
+                            'type': 'text',
+                            'text': text
+                        }
+                    ]
+                }
+                
+                # 使用 session 复用连接
+                response = self.session.post(url, json=payload, timeout=10)
+                response.raise_for_status()
+                return True
+            except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"回覆訊息失敗（SSL錯誤，已重试{max_retries}次）: {str(e)}")
+                    return False
+            except Exception as e:
+                print(f"回覆訊息失敗: {str(e)}")
+                return False
+        return False
     
     def send_image_message(self, user_id: str, image_url: str) -> bool:
         """
@@ -280,7 +420,8 @@ class LINEAPIClient:
                 ]
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            # 使用 session 复用连接
+            response = self.session.post(url, json=payload, timeout=10)
             response.raise_for_status()
             return True
         except Exception as e:
@@ -316,7 +457,8 @@ class LINEAPIClient:
                 ]
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+            # 使用 session 复用连接
+            response = self.session.post(url, json=payload, timeout=30)
             response.raise_for_status()
             return True
         except Exception as e:
@@ -352,7 +494,8 @@ class LINEAPIClient:
                 ]
             }
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+            # 使用 session 复用连接
+            response = self.session.post(url, json=payload, timeout=30)
             response.raise_for_status()
             return True
         except Exception as e:
@@ -398,12 +541,8 @@ class LINEAPIClient:
                 ]
             }
             
-            # 打印調試信息（只打印關鍵部分，避免過長）
-            print(f"[除錯] Image Carousel columns 數量: {len(columns)}")
-            for i, col in enumerate(columns):
-                print(f"[除錯] Column {i+1}: imageUrl={col.get('imageUrl', '')[:50]}..., action={col.get('action', {}).get('type', 'N/A')}")
-            
-            response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+            # 使用 session 复用连接
+            response = self.session.post(url, json=payload, timeout=30)
             
             # 如果失敗，打印詳細錯誤信息
             if response.status_code != 200:
@@ -421,12 +560,6 @@ class LINEAPIClient:
             print(f"回覆 Image Carousel 失敗 (HTTP錯誤): {str(e)}")
             if hasattr(e, 'response') and e.response is not None:
                 print(f"錯誤響應狀態碼: {e.response.status_code}")
-                print(f"錯誤響應內容: {e.response.text}")
-                try:
-                    error_data = e.response.json()
-                    print(f"錯誤詳情: {json.dumps(error_data, ensure_ascii=False, indent=2)}")
-                except:
-                    pass
             return False
         except Exception as e:
             print(f"回覆 Image Carousel 失敗: {str(e)}")
@@ -473,12 +606,8 @@ class LINEAPIClient:
                 ]
             }
             
-            # 打印調試信息
-            print(f"[除錯] Image Carousel columns 數量: {len(columns)}")
-            for i, col in enumerate(columns):
-                print(f"[除錯] Column {i+1}: imageUrl={col.get('imageUrl', '')[:50]}..., action={col.get('action', {}).get('type', 'N/A')}")
-            
-            response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+            # 使用 session 复用连接
+            response = self.session.post(url, json=payload, timeout=30)
             
             # 如果失敗，打印詳細錯誤信息
             if response.status_code != 200:
@@ -496,12 +625,6 @@ class LINEAPIClient:
             print(f"發送 Image Carousel 失敗 (HTTP錯誤): {str(e)}")
             if hasattr(e, 'response') and e.response is not None:
                 print(f"錯誤響應狀態碼: {e.response.status_code}")
-                print(f"錯誤響應內容: {e.response.text}")
-                try:
-                    error_data = e.response.json()
-                    print(f"錯誤詳情: {json.dumps(error_data, ensure_ascii=False, indent=2)}")
-                except:
-                    pass
             return False
         except Exception as e:
             print(f"發送 Image Carousel 失敗: {str(e)}")
@@ -527,6 +650,31 @@ class DifyAPIClient:
             'Authorization': f'Bearer {self.api_key}',
             'Content-Type': 'application/json'
         }
+        # 使用 Session 复用连接，提高性能
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+        
+        # 配置重试策略（处理 SSL 错误和连接问题）
+        retry_strategy = Retry(
+            total=3,  # 最多重试3次
+            backoff_factor=1,  # 重试间隔：1秒, 2秒, 4秒
+            status_forcelist=[429, 500, 502, 503, 504],  # 这些状态码会重试
+            allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
+            raise_on_status=False
+        )
+        
+        # 创建适配器并配置 SSL
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+        
+        # 配置 SSL 上下文（更宽松的 SSL 验证，避免 SSL 错误）
+        # 注意：在生产环境中，应该使用严格的 SSL 验证
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except:
+            pass
     
     def send_message(self, text: str, conversation_id: Optional[str] = None, 
                     user_id: str = 'default_user') -> Optional[Dict]:
@@ -543,25 +691,38 @@ class DifyAPIClient:
         Returns:
             Optional[Dict]: Dify 回應，失敗返回 None
         """
-        try:
-            url = f'{self.endpoint}/chat-messages'
-            payload = {
-                'inputs': {},
-                'query': text,
-                'response_mode': 'blocking',
-                'user': user_id
-            }
-            
-            if conversation_id:
-                payload['conversation_id'] = conversation_id
-            
-            response = requests.post(url, headers=self.headers, json=payload, timeout=60)
-            response.raise_for_status()
-            
-            return response.json()
-        except Exception as e:
-            print(f"Dify API 請求失敗: {str(e)}")
-            return None
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                url = f'{self.base_url}/chat-messages'
+                payload = {
+                    'inputs': {},
+                    'query': text,
+                    'response_mode': 'blocking',
+                    'user': user_id
+                }
+                
+                if conversation_id:
+                    payload['conversation_id'] = conversation_id
+                
+                # 使用 session 复用连接
+                response = self.session.post(url, json=payload, timeout=60)
+                response.raise_for_status()
+                
+                return response.json()
+            except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"Dify API 請求失敗（SSL錯誤，已重试{max_retries}次）: {str(e)}")
+                    return None
+            except Exception as e:
+                print(f"Dify API 請求失敗: {str(e)}")
+                return None
+        return None
     
     def send_image(self, image_data, conversation_id: Optional[str] = None,
                   user_id: str = 'default_user', query: str = "請分析這張圖片",
@@ -598,16 +759,33 @@ class DifyAPIClient:
                 print("[錯誤] image_data 格式不正確，應為 bytes 或 List[bytes]")
                 return None
             
-            # 步驟 1: 上傳所有圖片取得 file_id 列表
+            # 步驟 1: 並行上傳所有圖片取得 file_id 列表（優化：使用 ThreadPoolExecutor）
+            def upload_single_file(img_data: bytes, index: int) -> Optional[str]:
+                """上傳單個文件（用於並行處理）"""
+                return self._upload_file(img_data, user_id)
+            
             file_ids = []
-            for i, img_data in enumerate(image_data_list):
-                print(f"正在上傳圖片 {i+1}/{len(image_data_list)} (大小: {len(img_data)} bytes)...")
-                file_id = self._upload_file(img_data, user_id)
-                if not file_id:
-                    print(f"❌ 圖片 {i+1} 上傳失敗")
+            with ThreadPoolExecutor(max_workers=min(len(image_data_list), 5)) as executor:
+                upload_futures = {
+                    executor.submit(upload_single_file, img_data, i): i 
+                    for i, img_data in enumerate(image_data_list)
+                }
+                
+                # 收集結果（保持順序）
+                temp_file_ids = [None] * len(image_data_list)
+                for future in as_completed(upload_futures):
+                    index = upload_futures[future]
+                    try:
+                        file_id = future.result()
+                        temp_file_ids[index] = file_id
+                    except Exception as e:
+                        print(f"❌ 圖片 {index+1} 上傳失敗: {str(e)}")
+                
+                # 檢查是否所有文件都上傳成功
+                file_ids = [fid for fid in temp_file_ids if fid is not None]
+                if len(file_ids) != len(image_data_list):
+                    print(f"❌ 部分圖片上傳失敗（成功: {len(file_ids)}/{len(image_data_list)}）")
                     return None
-                file_ids.append(file_id)
-                print(f"✓ 圖片 {i+1} 上傳成功，file_id: {file_id}")
             
             # 工作流 API 端點
             url = f'{self.base_url}/v1/workflows/run'
@@ -638,13 +816,35 @@ class DifyAPIClient:
                 'user': user_id
             }
             
-            print(f"準備發送工作流請求（{len(file_ids)} 張圖片）...")
-            print(f"API Key: {self.api_key[:20]}...")
-            print(f"端點: {url}")
-            print(f"輸入變數: {user_variable}={user_id}, {text_variable}={query[:50] if query else 'N/A'}...")
-            print(f"圖片變數: {image_variable} (file_ids: {file_ids})")
+            # 使用 session 复用连接
+            # 注意：Dify API 的 blocking 模式有 Cloudflare 的 100 秒限制
+            # 如果工作流執行時間超過 100 秒，會超時
+            # 設置 timeout=100 以符合 Cloudflare 限制
+            workflow_start_time = time.time()
+            print(f"[時間記錄] 開始調用 Dify 工作流 API...")
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=120)
+            # 添加重试逻辑处理 SSL 错误
+            max_retries = 3
+            response = None
+            for attempt in range(max_retries):
+                try:
+                    response = self.session.post(url, json=payload, timeout=100)
+                    break  # 成功则退出循环
+                except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        print(f"SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"Dify 工作流 API 調用失敗（SSL錯誤，已重试{max_retries}次）: {str(e)}")
+                        raise
+            
+            if response is None:
+                return None
+                
+            workflow_elapsed = time.time() - workflow_start_time
+            print(f"[時間記錄] Dify 工作流 API 調用完成，耗時: {workflow_elapsed:.2f}秒")
             
             # 處理錯誤回應
             if response.status_code == 400:
@@ -681,42 +881,36 @@ class DifyAPIClient:
             
             # 檢查回應狀態
             if response.status_code not in (200, 201):
-                print(f"\n❌ Dify API 錯誤狀態碼: {response.status_code}")
+                print(f"❌ Dify API 錯誤狀態碼: {response.status_code}")
                 print(f"錯誤回應: {response.text}")
-                try:
-                    error_data = response.json()
-                    print(f"錯誤詳情: {json.dumps(error_data, ensure_ascii=False, indent=2)}")
-                except:
-                    pass
                 response.raise_for_status()
             
             result = response.json()
             # 提取 'data.outputs.text' 欄位（工作流回應格式）
             data = result.get('data', {})
-            print(f"[除錯] data: {data}")
-            print(f"[除錯] data 類型: {type(data)}")
-            
             outputs = data.get('outputs', {}) if isinstance(data, dict) else {}
-            print(f"[除錯] outputs: {outputs}")
-            print(f"[除錯] outputs 類型: {type(outputs)}")
-            
             answer = outputs.get('text', '') if isinstance(outputs, dict) else ''
-            print(f"[除錯] 提取的 answer: {answer}")
-            print(f"[除錯] answer 類型: {type(answer)}, 長度: {len(str(answer)) if answer else 0}")
             
             # 將 \n 轉換為實際換行符號
             if answer:
                 answer = answer.replace('\\n', '\n')
-                print(f"[除錯] 轉換後的 answer 長度: {len(str(answer))}")
-            
-            print(f"✓ Dify 工作流執行成功 (回應長度: {len(str(answer))} 字元)")
-            if answer:
-                print(f"回應預覽: {str(answer)[:200]}...")
             else:
-                print("[警告] 回應為空")
-                print(f"[除錯] 完整 result: {json.dumps(result, ensure_ascii=False, indent=2)}")
+                print("[警告] Dify 回應為空")
+            
             return result
             
+        except requests.exceptions.Timeout as e:
+            print(f"\n❌ Dify 工作流執行超時（超過 100 秒）")
+            print(f"提示：Dify API 的 blocking 模式有 Cloudflare 的 100 秒限制")
+            print(f"如果工作流執行時間超過 100 秒，會自動超時")
+            print(f"建議：檢查 Dify 工作流的複雜度，或考慮優化工作流執行時間")
+            return None
+        except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+            print(f"\n❌ Dify 圖片處理失敗（SSL錯誤）: {str(e)}")
+            print(f"提示：SSL 連接錯誤，可能是網路問題或伺服器 SSL 配置問題")
+            import traceback
+            traceback.print_exc()
+            return None
         except requests.exceptions.HTTPError as e:
             status_code = e.response.status_code if hasattr(e, 'response') and e.response else 'N/A'
             print(f"\n❌ Dify 圖片處理失敗 (HTTP {status_code}): {str(e)}")
@@ -743,9 +937,15 @@ class DifyAPIClient:
             Optional[str]: file_id，失敗返回 None
         """
         try:
+            # 驗證檔案資料不為空
+            if not file_data or len(file_data) == 0:
+                print("[錯誤] 檔案資料為空，無法上傳")
+                return None
+            
             import mimetypes
             
             url = f"{self.base_url}/v1/files/upload"
+            # 對於檔案上傳，需要移除 Content-Type header，讓 requests 自動設置 multipart/form-data
             headers = {
                 'Authorization': f'Bearer {self.api_key}'
             }
@@ -756,24 +956,47 @@ class DifyAPIClient:
             # 判斷檔案類型（簡單判斷）
             mime_type = 'image/jpeg'
             filename = 'image.jpg'
-            if file_data[:4] == b'\x89PNG':
+            if len(file_data) >= 4 and file_data[:4] == b'\x89PNG':
                 mime_type = 'image/png'
                 filename = 'image.png'
-            elif file_data[:2] == b'\xff\xd8':
+            elif len(file_data) >= 2 and file_data[:2] == b'\xff\xd8':
                 mime_type = 'image/jpeg'
                 filename = 'image.jpg'
             
             # 使用 requests 的 files 參數上傳
+            # 注意：不要使用 session，因為 session 的 headers 可能包含 Content-Type
+            # 這會與 multipart/form-data 衝突
             files = {
                 'file': (filename, file_data, mime_type)
             }
             
-            response = requests.post(url, headers=headers, data=data, files=files, timeout=30)
+            # 直接使用 requests.post 而不是 session.post，避免 header 衝突
+            # requests 已在檔案頂部導入
+            # 添加重试逻辑处理 SSL 错误
+            max_retries = 3
+            response = None
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(url, headers=headers, data=data, files=files, timeout=30)
+                    break  # 成功则退出循环
+                except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        print(f"SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"檔案上傳失敗（SSL錯誤，已重试{max_retries}次）: {str(e)}")
+                        return None
+            
+            if response is None:
+                return None
             
             if response.status_code in (200, 201):
                 body = response.json()
                 file_id = body.get('id')
                 if file_id:
+                    print(f"[成功] 檔案上傳成功，file_id: {file_id}")
                     return file_id
                 else:
                     print(f"[錯誤] 上傳成功但未取得 file_id，回應: {body}")
@@ -781,6 +1004,11 @@ class DifyAPIClient:
             else:
                 print(f"[錯誤] 檔案上傳失敗，狀態碼: {response.status_code}")
                 print(f"錯誤回應: {response.text}")
+                try:
+                    error_data = response.json()
+                    print(f"錯誤詳情: {error_data}")
+                except:
+                    pass
                 return None
                 
         except Exception as e:
@@ -805,75 +1033,288 @@ class DifyAPIClient:
 
 
 class GeminiImageAPIClient:
-    """與 Google Gemini API 通訊（用於圖片生成）"""
+    """與 Google Imagen API 通訊（用於圖片生成）- 優先使用 Generative Language API（更快），備用 Vertex AI API"""
     
-    def __init__(self, api_key: str):
+    # 類級別的 token 緩存（所有實例共享，用於 Vertex AI API 備用）
+    _cached_token = None
+    _token_expiry = 0
+    _token_lock = threading.Lock()
+    
+    # 類級別的 Token 緩存字典（支援多個 scopes）
+    _token_cache = {}
+    
+    # 類級別的 Session（所有實例共享，用於連接復用）
+    _session = None
+    _session_lock = threading.Lock()
+    
+    def __init__(self, project_id: str = None, location: str = None):
         """
-        初始化 Gemini API 客戶端
+        初始化 Vertex AI Imagen API 客戶端（使用 REST API + 服務帳號認證）
+        完全依賴 Cloud Run 的服務帳號，不使用 API Key
         
         Args:
-            api_key: Google Gemini API Key
+            project_id: Google Cloud Project ID（如果為 None，則從環境變數讀取）
+            location: Vertex AI Location（如果為 None，則從環境變數讀取，預設為 us-central1）
         """
-        self.api_key = api_key
-        # Gemini 2.5 Flash Image 使用 Google Generative AI API
-        # 嘗試多個可能的模型名稱
+        self.project_id = project_id or VERTEX_AI_PROJECT_ID
+        self.location = location or VERTEX_AI_LOCATION
+        
+        if not self.project_id:
+            raise ValueError("錯誤: VERTEX_AI_PROJECT_ID 環境變數未設定，請檢查 LINE.env 檔案")
+        
+        # 使用 Imagen 3.0 作為優先模型（更穩定，避免 SSL 錯誤）
         self.possible_models = [
-            "gemini-2.5-flash-image-preview",
-            "gemini-2.5-flash-image",
-            "gemini-2.0-flash-exp-image-generation-001",
-            "gemini-2.5-flash-exp-image-generation",
-            "imagen-3",
-            "imagen-4"
+            "imagen-3.0-generate-002",        # Imagen 3.0（優先，更穩定）
+            "imagen-4.0-fast-generate-001",   # Imagen 4.0 Fast（備用）
+            "imagen-4.0-generate-001"         # Imagen 4.0（備用）
         ]
-        # 預設使用第一個模型
-        self.base_url = f'https://generativelanguage.googleapis.com/v1beta/models/{self.possible_models[0]}:generateContent'
-        self.headers = {
-            'Content-Type': 'application/json'
-        }
+        # 預設使用第一個模型（Imagen 3.0）
         self.current_model = self.possible_models[0]
     
-    def list_available_models(self) -> List[str]:
+    def _get_access_token(self, scopes: List[str] = None) -> str:
         """
-        列出可用的圖像生成模型
+        從 Google Cloud Metadata Server 獲取 Access Token（帶緩存）
+        支援指定 scopes（用於 Generative Language API）
+        
+        Args:
+            scopes: OAuth2 scopes 列表，例如：['https://www.googleapis.com/auth/cloud-platform']
+                   如果為 None，使用默認 scope（向後兼容）
         
         Returns:
-            List[str]: 可用的模型名稱列表
+            str: OAuth 2 access token
         """
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
-            response = requests.get(url, timeout=30)
-            if response.status_code == 200:
-                models_data = response.json()
-                models = models_data.get('models', [])
-                # 過濾出圖像生成相關的模型
-                image_models = []
-                for model in models:
-                    name = model.get('name', '')
-                    supported_methods = model.get('supportedGenerationMethods', [])
-                    # 檢查是否支持 generateContent 且名稱包含 image
-                    if 'generateContent' in supported_methods and ('image' in name.lower() or 'imagen' in name.lower()):
-                        image_models.append(name.replace('models/', ''))
-                print(f"[除錯] 找到 {len(image_models)} 個可用的圖像生成模型:")
-                for m in image_models:
-                    print(f"  - {m}")
-                return image_models
+        current_time = time.time()
+        
+        # 如果指定了 scopes，使用不同的緩存鍵
+        scope_key = ','.join(sorted(scopes)) if scopes else 'default'
+        
+        # 檢查緩存的 token 是否仍然有效（提前 5 分鐘刷新）
+        with self._token_lock:
+            # 初始化緩存字典（如果不存在）
+            if not hasattr(GeminiImageAPIClient, '_token_cache'):
+                GeminiImageAPIClient._token_cache = {}
+            
+            # 檢查是否有緩存的 token
+            if scope_key == 'default':
+                # 向後兼容：使用舊的緩存方式
+                if self._cached_token and current_time < (self._token_expiry - 300):
+                    return self._cached_token
             else:
-                print(f"[警告] 無法列出模型: {response.status_code}")
-                return []
+                # 使用新的緩存字典
+                cached_data = GeminiImageAPIClient._token_cache.get(scope_key)
+                if cached_data and current_time < (cached_data['expiry'] - 300):
+                    return cached_data['token']
+        
+        # 從 Metadata Server 獲取新的 token
+        try:
+            # 構建 URL，如果指定了 scopes 則添加 scopes 參數（需要 URL 編碼）
+            from urllib.parse import urlencode
+            metadata_url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+            if scopes:
+                scopes_param = ','.join(scopes)
+                # URL 編碼 scopes 參數
+                params = {'scopes': scopes_param}
+                metadata_url = f"{metadata_url}?{urlencode(params)}"
+                print(f"[調試] 請求 Token，scopes: {scopes_param}")
+                print(f"[調試] Metadata URL: {metadata_url}")
+            
+            headers = {"Metadata-Flavor": "Google"}
+            
+            response = requests.get(metadata_url, headers=headers, timeout=5)
+            response.raise_for_status()
+            
+            token_data = response.json()
+            access_token = token_data["access_token"]
+            expires_in = token_data.get("expires_in", 3600)  # 預設 1 小時
+            
+            # 調試：打印 Token 的前幾個字符（不完整顯示，避免洩露）
+            print(f"[調試] 成功獲取 Token，有效期: {expires_in}秒，前10字符: {access_token[:10]}...")
+            
+            # 緩存 token
+            with self._token_lock:
+                if scope_key == 'default':
+                    # 向後兼容：使用舊的緩存方式
+                    self._cached_token = access_token
+                    self._token_expiry = current_time + expires_in
+                else:
+                    # 使用新的緩存字典
+                    if not hasattr(GeminiImageAPIClient, '_token_cache'):
+                        GeminiImageAPIClient._token_cache = {}
+                    GeminiImageAPIClient._token_cache[scope_key] = {
+                        'token': access_token,
+                        'expiry': current_time + expires_in
+                    }
+            
+            return access_token
+            
         except Exception as e:
-            print(f"[警告] 列出模型時發生錯誤: {str(e)}")
-            return []
+            print(f"[錯誤] 無法從 Metadata Server 獲取 Access Token: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise ValueError(f"認證失敗: {str(e)}")
     
     def generate_image(self, prompt: str, size: str = "1024x1024", model: str = None) -> Optional[bytes]:
         """
-        使用 Google Gemini API 生成圖片
-        
-        API: POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+        使用 Vertex AI Imagen API 生成圖片（已禁用 Generative Language API）
+        支援多 Project ID 分散負載，提高穩定性
         
         Args:
             prompt: 圖片描述提示詞
-            size: 圖片尺寸（例如: "1024x1024"），Gemini API 可能使用不同的尺寸格式
-            model: 使用的模型（如果為 None，則自動嘗試可用的模型）
+            size: 圖片尺寸（例如: "1024x1024"），對應到 image_size 參數
+            model: 使用的模型（如果為 None，則使用預設模型）
+        
+        Returns:
+            Optional[bytes]: 生成的圖片資料（bytes），失敗返回 None
+        """
+        # 直接使用 Vertex AI API（已禁用 Generative Language API）
+        # 已配置多 Project ID 分散負載，提高穩定性
+        return self._generate_image_vertex_ai(prompt, size, model)
+    
+    def _get_oauth2_token(self) -> Optional[str]:
+        """
+        獲取 OAuth2 Access Token（用於 Generative Language API）
+        優先使用 google.auth，如果不可用則使用 Metadata Server
+        明確指定所需的 scopes
+        """
+        try:
+            # Generative Language API 所需的 scopes
+            required_scopes = ['https://www.googleapis.com/auth/cloud-platform']
+            print(f"[調試] 請求 OAuth2 Token，scopes: {required_scopes}")
+            
+            if GOOGLE_AUTH_AVAILABLE:
+                # 使用 google.auth（支援 Service Account JSON 和 Metadata Server）
+                # 明確指定 scopes
+                print("[調試] 使用 google.auth.default() 獲取憑證")
+                credentials, project = default(scopes=required_scopes)
+                print(f"[調試] 獲取的 Project: {project}")
+                
+                if not credentials.valid:
+                    print("[調試] 憑證無效，正在刷新...")
+                    credentials.refresh(Request())
+                
+                token = credentials.token
+                print(f"[調試] 成功獲取 OAuth2 Token（google.auth），前10字符: {token[:10]}...")
+                return token
+            else:
+                # 回退到 Metadata Server（Cloud Run 環境）
+                # 明確指定 scopes
+                print("[調試] 使用 Metadata Server 獲取 Token")
+                token = self._get_access_token(scopes=required_scopes)
+                print(f"[調試] 成功獲取 OAuth2 Token（Metadata Server），前10字符: {token[:10]}...")
+                return token
+        except Exception as e:
+            print(f"[警告] 無法獲取 OAuth2 Token: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _generate_image_generative_api(self, prompt: str) -> Optional[bytes]:
+        """
+        使用 Google Generative Language API 生成圖片（已禁用）
+        此方法已不再使用，改為直接使用 Vertex AI API
+        """
+        # 此方法已禁用，不再使用 Generative Language API
+        print("[提示] Generative Language API 已禁用，使用 Vertex AI API")
+        return None
+        
+        # 以下代碼已不再使用（保留作為參考）
+        try:
+            # 使用 API Key 認證（通過 URL 參數，參考 main.py）
+            # 注意：此方法已禁用，不會執行到這裡
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict?key=DISABLED"
+            headers = {
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "instances": [{"prompt": prompt}],
+                "parameters": {"sampleCount": 1, "aspectRatio": "1:1"}
+            }
+            
+            # 使用 Session 復用連接，提高性能
+            with self._session_lock:
+                if GeminiImageAPIClient._session is None:
+                    GeminiImageAPIClient._session = requests.Session()
+                    adapter = requests.adapters.HTTPAdapter(
+                        pool_connections=10,
+                        pool_maxsize=20,
+                        max_retries=requests.adapters.Retry(
+                            total=3,
+                            backoff_factor=1,
+                            status_forcelist=[500, 502, 503, 504],
+                            allowed_methods=["POST"]
+                        )
+                    )
+                    GeminiImageAPIClient._session.mount("https://", adapter)
+            
+            # 重試機制：最多重試 3 次
+            max_retries = 3
+            retry_delay = 2
+            
+            for attempt in range(max_retries):
+                try:
+                    api_start_time = time.time()
+                    response = GeminiImageAPIClient._session.post(
+                        url, 
+                        headers=headers, 
+                        json=payload, 
+                        timeout=(10, 300)  # (連接超時10秒, 讀取超時300秒)
+                    )
+                    api_elapsed = time.time() - api_start_time
+                    print(f"[時間記錄] Generative Language API (API Key) 調用耗時: {api_elapsed:.2f}秒")
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        b64_image = result.get('predictions', [{}])[0].get('bytesBase64Encoded')
+                        if b64_image:
+                            image_bytes = base64.b64decode(b64_image)
+                            return image_bytes
+                        else:
+                            print("[錯誤] API 回應中沒有找到圖片數據（bytesBase64Encoded）")
+                            return None
+                    else:
+                        error_msg = response.text[:200]
+                        print(f"[錯誤] API 調用失敗 ({response.status_code}): {error_msg}")
+                        
+                        if response.status_code in [401, 403]:
+                            # API Key 無效或權限不足（此方法已禁用）
+                            if response.status_code == 401:
+                                print(f"[錯誤] API Key 認證失敗（此方法已禁用）")
+                            else:
+                                print(f"[錯誤] API Key 權限不足（此方法已禁用）")
+                            return None
+                        
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"[提示] {wait_time}秒後重試...")
+                            time.sleep(wait_time)
+                            continue
+                        return None
+                        
+                except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, BrokenPipeError, OSError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"[警告] 連接錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}")
+                        print(f"[提示] {wait_time}秒後重試...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"[錯誤] 連接失敗（已重試 {max_retries} 次）: {str(e)}")
+                        return None
+                        
+        except Exception as e:
+            print(f"[錯誤] Generative Language API (API Key) 調用失敗: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _generate_image_vertex_ai(self, prompt: str, size: str = "1024x1024", model: str = None) -> Optional[bytes]:
+        """
+        使用 Vertex AI Imagen API 生成圖片（備用方案）
+        
+        Args:
+            prompt: 圖片描述提示詞
+            size: 圖片尺寸（例如: "1024x1024"），對應到 image_size 參數
+            model: 使用的模型（如果為 None，則使用預設模型）
         
         Returns:
             Optional[bytes]: 生成的圖片資料（bytes），失敗返回 None
@@ -885,202 +1326,300 @@ class GeminiImageAPIClient:
             else:
                 self.current_model = model
             
-            # 更新 base_url 以使用指定的模型
-            self.base_url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
+            # 獲取 Access Token
+            access_token = self._get_access_token()
             
-            # Gemini API 請求格式（圖像生成）
+            # 構建 API URL
+            api_url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{model}:predict"
+            
+            # 設置請求頭
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            # 構建請求體（對應 Postman 的格式）
             payload = {
-                "contents": [
+                "instances": [
                     {
-                        "parts": [
-                            {
-                                "text": prompt
-                            }
-                        ]
+                        "prompt": prompt
                     }
                 ],
-                "generationConfig": {
-                    "temperature": 1.0,
-                    "topK": 32,
-                    "topP": 1.0,
-                    "maxOutputTokens": 4096,
-                    "responseModalities": ["IMAGE"],  # 指定生成圖像
-                    "imageConfig": {
-                        "aspectRatio": "1:1"  # 預設使用 1:1，可以根據 size 參數調整
-                    }
+                "parameters": {
+                    "sampleCount": 1,
+                    "aspectRatio": "1:1"
                 }
             }
             
-            # 根據 size 參數調整寬高比（簡化處理）
-            # Gemini API 使用寬高比而不是具體像素尺寸
-            if "1024x1024" in size or "1:1" in size:
-                payload["generationConfig"]["imageConfig"]["aspectRatio"] = "1:1"
-            elif "16:9" in size or "1024x576" in size:
-                payload["generationConfig"]["imageConfig"]["aspectRatio"] = "16:9"
-            elif "4:3" in size:
-                payload["generationConfig"]["imageConfig"]["aspectRatio"] = "4:3"
-            elif "9:16" in size:
-                payload["generationConfig"]["imageConfig"]["aspectRatio"] = "9:16"
+            # 為每個請求創建獨立的 Session（避免併行請求時的連接衝突）
+            def create_session():
+                """創建新的 Session 和適配器"""
+                session = requests.Session()
+                adapter = requests.adapters.HTTPAdapter(
+                    pool_connections=5,
+                    pool_maxsize=10,
+                    max_retries=requests.adapters.Retry(
+                        total=0,  # 禁用 urllib3 的重試，使用代碼層面的重試（更可控）
+                        backoff_factor=0,
+                        status_forcelist=[],
+                        allowed_methods=[]
+                    )
+                )
+                session.mount("https://", adapter)
+                return session
             
-            print(f"正在調用 Gemini 圖片生成 API...")
-            print(f"Prompt: {prompt[:100]}...")
-            print(f"Model: {model}")
+            session = create_session()
             
-            # 在 URL 中添加 API key
-            url = f"{self.base_url}?key={self.api_key}"
+            # 重試機制：最多重試 5 次（增加重試次數以應對 SSL 錯誤）
+            max_retries = 5
+            retry_delay = 2
             
-            response = requests.post(url, headers=self.headers, json=payload, timeout=60)
-            
-            # 檢查回應狀態
-            if response.status_code not in (200, 201):
-                print(f"❌ Gemini API 錯誤狀態碼: {response.status_code}")
-                print(f"錯誤回應: {response.text}")
-                try:
-                    error_data = response.json()
-                    print(f"錯誤詳情: {json.dumps(error_data, ensure_ascii=False, indent=2)}")
-                    
-                    # 處理速率限制錯誤 (429)
-                    if response.status_code == 429:
-                        retry_after = response.headers.get('Retry-After', '5')
-                        try:
-                            wait_time = int(retry_after) if retry_after.isdigit() else 5
-                        except:
-                            wait_time = 5
-                        print(f"[警告] 觸發速率限制，等待 {wait_time} 秒後重試...")
-                        time.sleep(wait_time)
-                        # 重試一次
-                        response = requests.post(url, headers=self.headers, json=payload, timeout=60)
-                        if response.status_code not in (200, 201):
-                            print(f"❌ 重試後仍然失敗: {response.status_code}")
-                            # 繼續嘗試其他模型，需要重新解析錯誤
-                            try:
-                                error_data = response.json()
-                            except:
-                                error_data = {}
-                        # 如果重試成功，response.status_code 會是 200/201，會跳出這個 if 塊繼續處理
-                    
-                    # 如果模型不存在，嘗試其他可能的模型
-                    if response.status_code not in (200, 201) and (error_data.get('error', {}).get('message', '').find('not found') != -1 or error_data.get('error', {}).get('code') == 404):
-                        print(f"[提示] 模型 '{model}' 不存在，嘗試其他可用的模型...")
-                        # 嘗試列表中的其他模型
-                        for fallback_model in self.possible_models:
-                            if fallback_model == model:
-                                continue
-                            print(f"[嘗試] 使用模型: {fallback_model}")
-                            fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={self.api_key}"
-                            try:
-                                # 添加短暫延遲避免速率限制
-                                time.sleep(1)
-                                fallback_response = requests.post(fallback_url, headers=self.headers, json=payload, timeout=60)
-                                if fallback_response.status_code in (200, 201):
-                                    print(f"✓ 成功使用模型: {fallback_model}")
-                                    self.current_model = fallback_model
-                                    self.base_url = fallback_url.split('?')[0]  # 更新 base_url
-                                    response = fallback_response
-                                    break
-                                elif fallback_response.status_code == 429:
-                                    # 如果備用模型也遇到速率限制，等待後重試
-                                    print(f"[警告] 模型 {fallback_model} 也觸發速率限制，等待後重試...")
-                                    time.sleep(5)
-                                    fallback_response = requests.post(fallback_url, headers=self.headers, json=payload, timeout=60)
-                                    if fallback_response.status_code in (200, 201):
-                                        print(f"✓ 重試後成功使用模型: {fallback_model}")
-                                        self.current_model = fallback_model
-                                        self.base_url = fallback_url.split('?')[0]
-                                        response = fallback_response
-                                        break
-                                else:
-                                    print(f"✗ 模型 {fallback_model} 也失敗: {fallback_response.status_code}")
-                            except Exception as e:
-                                print(f"✗ 模型 {fallback_model} 請求失敗: {str(e)}")
-                                continue
-                        else:
-                            # 如果所有模型都失敗，列出可用模型
-                            if response.status_code not in (200, 201):
-                                print("[錯誤] 所有嘗試的模型都失敗，正在列出可用的模型...")
-                                available_models = self.list_available_models()
-                                if available_models:
-                                    print(f"[建議] 請嘗試使用以下模型之一: {', '.join(available_models[:3])}")
-                                response.raise_for_status()
-                    elif response.status_code not in (200, 201):
-                        # 對於其他錯誤，也嘗試其他模型
-                        print(f"[提示] 遇到錯誤，嘗試其他可用的模型...")
-                        for fallback_model in self.possible_models:
-                            if fallback_model == model:
-                                continue
-                            print(f"[嘗試] 使用模型: {fallback_model}")
-                            fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent?key={self.api_key}"
-                            try:
-                                time.sleep(1)  # 添加延遲
-                                fallback_response = requests.post(fallback_url, headers=self.headers, json=payload, timeout=60)
-                                if fallback_response.status_code in (200, 201):
-                                    print(f"✓ 成功使用模型: {fallback_model}")
-                                    self.current_model = fallback_model
-                                    self.base_url = fallback_url.split('?')[0]
-                                    response = fallback_response
-                                    break
-                            except Exception as e:
-                                print(f"✗ 模型 {fallback_model} 請求失敗: {str(e)}")
-                                continue
-                        else:
-                            if response.status_code not in (200, 201):
-                                response.raise_for_status()
-                except:
-                    if response.status_code not in (200, 201):
-                        response.raise_for_status()
-            
-            result = response.json()
-            print(f"[除錯] Gemini API 回應: {json.dumps(result, ensure_ascii=False, indent=2)}")
-            
-            # 提取圖片數據（Gemini API 回應格式）
-            # 回應格式可能為: {"candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": "base64..."}}]}}]}
-            candidates = result.get('candidates', [])
-            if not candidates or len(candidates) == 0:
-                print("[錯誤] Gemini API 回應中沒有 candidates 欄位")
-                return None
-            
-            first_candidate = candidates[0]
-            content = first_candidate.get('content', {})
-            parts = content.get('parts', [])
-            
-            if not parts or len(parts) == 0:
-                print("[錯誤] Gemini API 回應中沒有 parts 欄位")
-                return None
-            
-            # 查找包含圖片數據的 part
-            image_data_base64 = None
-            for part in parts:
-                inline_data = part.get('inlineData')
-                if inline_data:
-                    image_data_base64 = inline_data.get('data')
-                    if image_data_base64:
-                        break
-            
-            if not image_data_base64:
-                print("[警告] Gemini API 回應中沒有找到圖片數據")
-                print(f"[除錯] 完整回應結構: {json.dumps(result, ensure_ascii=False, indent=2)}")
-                return None
-            
-            # 將 base64 字符串解碼為 bytes
             try:
-                image_data = base64.b64decode(image_data_base64)
-                print(f"✓ 成功解碼 base64 圖片 (大小: {len(image_data)} bytes)")
-                return image_data
-            except Exception as e:
-                print(f"❌ Base64 解碼失敗: {str(e)}")
+                for attempt in range(max_retries):
+                    try:
+                        # 每次重試前重新獲取 Token（以防過期）
+                        if attempt > 0:
+                            access_token = self._get_access_token()
+                            headers["Authorization"] = f"Bearer {access_token}"
+                        
+                        # 發送請求
+                        api_start_time = time.time()
+                        response = session.post(
+                            api_url, 
+                            json=payload, 
+                            headers=headers, 
+                            timeout=(15, 300)  # 增加連接超時到15秒，讀取超時300秒
+                        )
+                        api_elapsed = time.time() - api_start_time
+                        print(f"[時間記錄] Vertex AI API 調用耗時: {api_elapsed:.2f}秒")
+                        
+                        response.raise_for_status()
+                        
+                        # 解析響應
+                        result = response.json()
+                        
+                        # 檢查響應格式
+                        if "predictions" in result and len(result["predictions"]) > 0:
+                            prediction = result["predictions"][0]
+                            
+                            # 圖片數據在 "bytesBase64Encoded" 字段中
+                            if "bytesBase64Encoded" in prediction:
+                                image_base64 = prediction["bytesBase64Encoded"]
+                                image_bytes = base64.b64decode(image_base64)
+                                return image_bytes
+                            else:
+                                print("[錯誤] API 回應中沒有找到圖片數據（bytesBase64Encoded）")
+                                return None
+                        else:
+                            print("[錯誤] API 回應中沒有 predictions")
+                            return None
+                            
+                    except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+                        # 明確處理 SSL 錯誤
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"[警告] SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}")
+                            print(f"[提示] {wait_time}秒後重試...")
+                            
+                            # 關閉舊 Session 並重新創建（避免使用已損壞的連接）
+                            try:
+                                session.close()
+                            except:
+                                pass
+                            session = create_session()
+                            
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            print(f"[錯誤] SSL 錯誤（已重試 {max_retries} 次）: {str(e)}")
+                            # 嘗試備用模型
+                            if model == self.possible_models[0] and len(self.possible_models) > 1:
+                                return self._try_fallback_model(prompt, payload)
+                            return None
+                            
+                    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, BrokenPipeError, OSError) as e:
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"[警告] 連接錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}")
+                            print(f"[提示] {wait_time}秒後重試...")
+                            
+                            # 重新建立連接
+                            try:
+                                session.close()
+                            except:
+                                pass
+                            session = create_session()
+                            
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            print(f"[錯誤] 連接失敗（已重試 {max_retries} 次）: {str(e)}")
+                            # 嘗試備用模型
+                            if model == self.possible_models[0] and len(self.possible_models) > 1:
+                                return self._try_fallback_model(prompt, payload)
+                            return None
+                            
+                    except requests.exceptions.HTTPError as e:
+                        # HTTP 錯誤，嘗試備用模型
+                        if model == self.possible_models[0] and len(self.possible_models) > 1:
+                            return self._try_fallback_model(prompt, payload)
+                        else:
+                            print(f"[錯誤] HTTP 錯誤: {e.response.status_code} - {e.response.text[:200]}")
+                            return None
+                            
+                    except Exception as e:
+                        print(f"[錯誤] 生成圖片失敗: {str(e)}")
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"[提示] {wait_time}秒後重試...")
+                            time.sleep(wait_time)
+                            continue
+                        import traceback
+                        traceback.print_exc()
+                        return None
+                
                 return None
-            
-        except requests.exceptions.HTTPError as e:
-            status_code = e.response.status_code if hasattr(e, 'response') and e.response else 'N/A'
-            print(f"\n❌ Gemini 圖片生成失敗 (HTTP {status_code}): {str(e)}")
-            if hasattr(e, 'response') and hasattr(e.response, 'text'):
-                print(f"錯誤回應內容: {e.response.text}")
-            return None
+            finally:
+                # 確保 Session 被關閉
+                try:
+                    session.close()
+                except:
+                    pass
+                
         except Exception as e:
-            print(f"\n❌ Gemini 圖片生成失敗: {str(e)}")
+            print(f"[錯誤] Vertex AI API 調用失敗: {str(e)}")
             import traceback
             traceback.print_exc()
             return None
+    
+    def _try_fallback_model(self, prompt: str, payload: dict) -> Optional[bytes]:
+        """嘗試使用備用模型（帶重試機制和 SSL 錯誤處理）"""
+        if len(self.possible_models) <= 1:
+            return None
+            
+        fallback_model = self.possible_models[1]
+        print(f"[提示] 嘗試備用模型: {fallback_model}")
+        
+        # 為備用模型創建獨立的 Session
+        def create_session():
+            """創建新的 Session 和適配器"""
+            session = requests.Session()
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=5,
+                pool_maxsize=10,
+                max_retries=requests.adapters.Retry(
+                    total=0,  # 禁用 urllib3 的重試，使用代碼層面的重試
+                    backoff_factor=0,
+                    status_forcelist=[],
+                    allowed_methods=[]
+                )
+            )
+            session.mount("https://", adapter)
+            return session
+        
+        session = create_session()
+        
+        max_retries = 3  # 增加重試次數
+        retry_delay = 2
+        
+        try:
+            for attempt in range(max_retries):
+                try:
+                    time.sleep(1)  # 短暫延遲
+                    
+                    # 每次重試前重新獲取 token（以防過期）
+                    if attempt > 0:
+                        access_token = self._get_access_token()
+                    else:
+                        access_token = self._get_access_token()
+                    
+                    # 使用備用模型
+                    api_url = f"https://{self.location}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.location}/publishers/google/models/{fallback_model}:predict"
+                    headers = {
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json"
+                    }
+                    
+                    fallback_start_time = time.time()
+                    fallback_response = session.post(
+                        api_url, 
+                        json=payload, 
+                        headers=headers, 
+                        timeout=(15, 300)  # 增加連接超時到15秒
+                    )
+                    fallback_elapsed = time.time() - fallback_start_time
+                    print(f"[時間記錄] 備用模型 REST API 調用耗時: {fallback_elapsed:.2f}秒")
+                    
+                    fallback_response.raise_for_status()
+                    fallback_result = fallback_response.json()
+                    
+                    if "predictions" in fallback_result and len(fallback_result["predictions"]) > 0:
+                        prediction = fallback_result["predictions"][0]
+                        if "bytesBase64Encoded" in prediction:
+                            self.current_model = fallback_model
+                            image_bytes = base64.b64decode(prediction["bytesBase64Encoded"])
+                            return image_bytes
+                    
+                    print("[錯誤] 備用模型回應中沒有圖片")
+                    return None
+                    
+                except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+                    # 明確處理 SSL 錯誤
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"[警告] 備用模型 SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}")
+                        print(f"[提示] {wait_time}秒後重試...")
+                        
+                        # 關閉舊 Session 並重新創建
+                        try:
+                            session.close()
+                        except:
+                            pass
+                        session = create_session()
+                        
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"[錯誤] 備用模型 SSL 錯誤（已重試 {max_retries} 次）: {str(e)}")
+                        return None
+                        
+                except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, BrokenPipeError, OSError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"[警告] 備用模型連接錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}")
+                        print(f"[提示] {wait_time}秒後重試...")
+                        
+                        # 重新建立連接
+                        try:
+                            session.close()
+                        except:
+                            pass
+                        session = create_session()
+                        
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"[錯誤] 備用模型也失敗: {str(e)}")
+                        return None
+                        
+                except Exception as fallback_error:
+                    print(f"[錯誤] 備用模型也失敗: {str(fallback_error)}")
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"[提示] {wait_time}秒後重試...")
+                        time.sleep(wait_time)
+                        continue
+                    import traceback
+                    traceback.print_exc()
+                    return None
+            
+            return None
+        finally:
+            # 確保 Session 被關閉
+            try:
+                session.close()
+            except:
+                pass
 
 
 class ImageProcessor:
@@ -1147,7 +1686,6 @@ class ImageProcessor:
             Optional[bytes]: 圖片資料，失敗返回 None
         """
         try:
-            print(f"正在從網址下載圖片: {image_url}")
             response = requests.get(image_url, timeout=timeout)
             response.raise_for_status()
             
@@ -1157,7 +1695,6 @@ class ImageProcessor:
                 print(f"警告: 下載的內容不是圖片 (Content-Type: {content_type})")
             
             image_data = response.content
-            print(f"✓ 圖片下載成功 (大小: {len(image_data)} bytes)")
             return image_data
         except Exception as e:
             print(f"從網址下載圖片失敗: {str(e)}")
@@ -1224,7 +1761,7 @@ class MessageFlowController:
         # 緩衝區鎖（線程安全）
         self.buffer_lock = threading.Lock()
         # 等待時間（秒）- 收集多張圖片的時間窗口
-        self.buffer_wait_time = 2.0
+        self.buffer_wait_time = 1.5
         # 追蹤每個使用者的定時器
         self.user_timers = {}
     
@@ -1257,14 +1794,11 @@ class MessageFlowController:
             self.image_buffer[user_id].append(event)
             buffer_size = len(self.image_buffer[user_id])
             
-            print(f"圖片事件已加入緩衝區（使用者: {user_id}, 目前: {buffer_size} 張）")
-            
             # 如果有 imageSet 資訊，檢查是否已收集完整
             if image_set:
                 total = image_set.get('total')
                 if total and buffer_size >= total:
                     # 已收集完整，立即處理
-                    print(f"已收集完整圖片組（{buffer_size}/{total}），立即處理")
                     events = self.image_buffer[user_id].copy()
                     self.image_buffer[user_id].clear()
                     if user_id in self.user_timers:
@@ -1314,7 +1848,6 @@ class MessageFlowController:
             events: 圖片事件列表
         """
         try:
-            print(f"開始處理緩衝區中的 {len(events)} 張圖片（使用者: {user_id}）")
             self.process_line_images(events)
         except Exception as e:
             print(f"處理緩衝圖片失敗: {str(e)}")
@@ -1327,7 +1860,7 @@ class MessageFlowController:
         
         流程：
         1. 從事件中提取訊息 ID
-        2. 下載所有圖片
+        2. 並行下載所有圖片
         3. 批次轉發到 Dify
         4. 發送結果到 LINE
         
@@ -1338,6 +1871,9 @@ class MessageFlowController:
             bool: 是否成功處理
         """
         try:
+            total_start_time = time.time()  # 總開始時間
+            print(f"[時間記錄] ========== 開始處理 {len(events)} 張圖片 ==========")
+            
             if not events:
                 print("錯誤: 沒有圖片事件")
                 return False
@@ -1349,39 +1885,59 @@ class MessageFlowController:
                 print("錯誤: 缺少使用者 ID")
                 return False
             
-            # 步驟 1: 下載所有圖片
-            image_data_list = []
-            for i, event in enumerate(events):
+            # 步驟 1: 並行下載所有圖片（優化：使用 ThreadPoolExecutor）
+            download_start = time.time()
+            print(f"[時間記錄] [1/4] 開始並行下載圖片...")
+            
+            def download_single_image(event: Dict) -> Optional[bytes]:
+                """下載單張圖片（用於並行處理）"""
                 message_id = event.get('message_id')
                 if not message_id:
-                    print(f"警告: 事件 {i+1} 缺少訊息 ID，跳過")
-                    continue
+                    return None
                 
-                print(f"正在下載圖片 {i+1}/{len(events)} (訊息 ID: {message_id})...")
-                image_data = ImageProcessor.download_from_line(message_id, LINE_CHANNEL_ACCESS_TOKEN)
+                img_start = time.time()
+                # image_data = ImageProcessor.download_from_line(message_id, LINE_CHANNEL_ACCESS_TOKEN)
+                # 改用 self.line_client.download_image 以復用 Session 連接
+                image_data = self.line_client.download_image(message_id)
+                img_elapsed = time.time() - img_start
+                if image_data:
+                    print(f"[時間記錄] 下載圖片完成，耗時: {img_elapsed:.2f}秒")
                 
                 if not image_data:
-                    print(f"警告: 圖片 {i+1} 下載失敗，跳過")
-                    continue
+                    return None
                 
                 # 驗證檔案格式是否為圖片
                 if not ImageProcessor.is_valid_image(image_data):
-                    print(f"錯誤: 檔案 {i+1} 不是有效的圖片格式")
-                    error_msg = "上傳格式錯誤，請重新上傳。"
-                    if reply_token:
-                        self.line_client.reply_message(reply_token, error_msg)
-                    else:
-                        self.line_client.send_text_message(user_id, error_msg)
-                    return False
-                
-                print(f"✓ 圖片 {i+1} 下載成功 (大小: {len(image_data)} bytes)")
+                    return None
                 
                 # 可選 - 調整圖片大小（如果太大）
                 if len(image_data) > 5 * 1024 * 1024:  # 5MB
-                    print(f"圖片 {i+1} 過大，正在調整大小...")
                     image_data = ImageProcessor.resize_image(image_data, max_size=(1024, 1024))
                 
-                image_data_list.append(image_data)
+                return image_data
+            
+            # 並行下載所有圖片
+            image_data_list = []
+            with ThreadPoolExecutor(max_workers=min(len(events), 5)) as executor:
+                download_futures = {
+                    executor.submit(download_single_image, event): i 
+                    for i, event in enumerate(events)
+                }
+                
+                # 收集結果（保持順序）
+                temp_image_list = [None] * len(events)
+                for future in as_completed(download_futures):
+                    index = download_futures[future]
+                    try:
+                        image_data = future.result()
+                        temp_image_list[index] = image_data
+                    except Exception as e:
+                        print(f"下載圖片 {index+1} 失敗: {str(e)}")
+                
+                image_data_list = [img for img in temp_image_list if img is not None]
+            
+            download_elapsed = time.time() - download_start
+            print(f"[時間記錄] [1/4] 下載完成，總耗時: {download_elapsed:.2f}秒")
             
             if not image_data_list:
                 error_msg = "抱歉，無法下載圖片，請稍後再試。"
@@ -1389,17 +1945,23 @@ class MessageFlowController:
                     self.line_client.reply_message(reply_token, error_msg)
                 return False
             
-            print(f"共下載 {len(image_data_list)} 張圖片")
+            # 檢查是否有無效圖片
+            if len(image_data_list) < len(events):
+                error_msg = "上傳格式錯誤，請重新上傳。"
+                if reply_token:
+                    self.line_client.reply_message(reply_token, error_msg)
+                else:
+                    self.line_client.send_text_message(user_id, error_msg)
+                return False
             
-            # 步驟 2: 取得或創建對話 ID
+            # 步驟 2: 發送圖片到 Dify（添加時間記錄）
+            dify_start = time.time()
+            print(f"[時間記錄] [2/4] 開始 Dify 處理...")
+            
             conversation_id = self.conversations.get(user_id)
-            
-            # 步驟 3: 發送圖片到 Dify（單張或多張）
             if len(image_data_list) == 1:
-                print(f"正在將圖片傳送至 Dify...")
                 query_text = "請分析這張圖片並提供詳細說明"
             else:
-                print(f"正在將 {len(image_data_list)} 張圖片傳送至 Dify...")
                 query_text = f"請分析這 {len(image_data_list)} 張圖片並提供詳細說明"
             
             dify_response = self.dify_client.send_image(
@@ -1409,20 +1971,17 @@ class MessageFlowController:
                 query=query_text
             )
             
+            dify_elapsed = time.time() - dify_start
+            print(f"[時間記錄] [2/4] Dify 處理完成，耗時: {dify_elapsed:.2f}秒")
+            
             if not dify_response:
                 error_msg = "抱歉，圖片處理失敗，請稍後再試。"
-                if reply_token:
-                    self.line_client.reply_message(reply_token, error_msg)
+                self._send_message_with_fallback(user_id, reply_token, 'text', error_msg)
                 return False
             
             # 步驟 5: 提取 Dify 回應（從 data.outputs 提取所有變數）
             data = dify_response.get('data', {})
-            print(f"[除錯] data: {data}")
-            print(f"[除錯] data 類型: {type(data)}")
-            
             outputs = data.get('outputs', {}) if isinstance(data, dict) else {}
-            print(f"[除錯] outputs: {outputs}")
-            print(f"[除錯] outputs 類型: {type(outputs)}")
             
             # 提取所有變數
             text = outputs.get('text', '') if isinstance(outputs, dict) else ''
@@ -1433,10 +1992,6 @@ class MessageFlowController:
             dish_2 = outputs.get('dish_2', '') if isinstance(outputs, dict) else ''
             dish_3 = outputs.get('dish_3', '') if isinstance(outputs, dict) else ''
             
-            print(f"[除錯] 提取的 text: {text[:100] if text else 'None'}...")
-            print(f"[除錯] 提取的 picture_1: {picture_1[:50] if picture_1 else 'None'}...")
-            print(f"[除錯] 提取的 dish_1: {dish_1[:50] if dish_1 else 'None'}...")
-            
             # 將 \n 轉換為實際換行符號
             if text:
                 text = text.replace('\\n', '\n')
@@ -1444,7 +1999,6 @@ class MessageFlowController:
             # 驗證 text 是否有效
             if not text or not text.strip():
                 print("[錯誤] text 為空或無效")
-                print(f"[除錯] 完整 dify_response: {json.dumps(dify_response, ensure_ascii=False, indent=2)}")
                 text = "抱歉，無法取得回應內容。"
             
             # 工作流通常不支援 conversation_id，但保留以備不時之需
@@ -1472,82 +2026,150 @@ class MessageFlowController:
                             del user_recipe_storage[user_id]
                         if user_id in user_text_storage:
                             del user_text_storage[user_id]
-                        print(f"[除錯] 已清理用戶 {user_id} 的食譜數據和 text")
                 
                 threading.Thread(target=cleanup_recipe, daemon=True).start()
             
-            # 步驟 6: 生成圖片並創建 Image Carousel
-            if GEMINI_API_KEY and picture_1 and picture_2 and picture_3:
-                print(f"正在生成圖片並創建 Image Carousel...")
-                gemini_client = GeminiImageAPIClient(GEMINI_API_KEY)
-                image_urls = []
+            # 步驟 6: 從 Dify 回應中提取圖片並創建 Image Carousel
+            if picture_1 and picture_2 and picture_3:
+                image_gen_start = time.time()
+                print(f"[時間記錄] [3/4] 開始處理 Dify 回傳的圖片...")
                 
-                # 生成三張圖片
-                for i, prompt in enumerate([picture_1, picture_2, picture_3], 1):
-                    if prompt and isinstance(prompt, str) and prompt.strip():
-                        # 如果不是第一張圖片，添加延遲避免速率限制
-                        if i > 1:
-                            wait_time = 2  # 等待 2 秒
-                            print(f"[等待] 避免速率限制，等待 {wait_time} 秒...")
-                            time.sleep(wait_time)
-                        
-                        print(f"正在生成圖片 {i}...")
-                        generated_image_data = gemini_client.generate_image(
-                            prompt=prompt.strip(),
-                            size="1024x1024",
-                            model=None  # 使用預設模型，如果失敗會自動嘗試其他模型
-                        )
-                        
-                        if generated_image_data:
-                            # 保存到臨時存儲並獲取 URL
-                            global temp_image_counter
-                            with temp_image_lock:
-                                temp_image_counter += 1
-                                image_id = f"img_{int(time.time())}_{temp_image_counter}"
-                                temp_image_storage[image_id] = generated_image_data
+                # 輔助函數：處理 Dify 回傳的圖片資料（支援 URL 和 base64）
+                def parse_dify_image(picture_data: any, index: int) -> Optional[str]:
+                    """從 Dify 回傳的資料中提取圖片 URL"""
+                    if not picture_data:
+                        print(f"[錯誤] picture_{index+1} 為空")
+                        return None
+                    
+                    try:
+                        # case 1: 如果是列表（新格式），直接提取 URL
+                        if isinstance(picture_data, list):
+                            if len(picture_data) > 0:
+                                item = picture_data[0]
+                                if isinstance(item, dict) and 'url' in item:
+                                    url = item['url']
+                                    print(f"[成功] picture_{index+1} 取得 URL: {url}")
+                                    return url
+                            print(f"[錯誤] picture_{index+1} 是列表但格式不符")
+                            return None
+
+                        # case 2: 如果是字串，嘗試解析 JSON
+                        if isinstance(picture_data, str):
+                            try:
+                                parsed_data = json.loads(picture_data)
+                                # 如果解析後是列表（JSON 字串格式的新格式）
+                                if isinstance(parsed_data, list):
+                                    if len(parsed_data) > 0:
+                                        item = parsed_data[0]
+                                        if isinstance(item, dict) and 'url' in item:
+                                            url = item['url']
+                                            print(f"[成功] picture_{index+1} 取得 URL (from JSON): {url}")
+                                            return url
                                 
-                                base_url = os.getenv('BASE_URL', '')
-                                if not base_url:
-                                    host = os.getenv('HOST', '0.0.0.0')
-                                    port = os.getenv('PORT', '5000')
-                                    protocol = 'https' if os.getenv('HTTPS', '').lower() == 'true' else 'http'
-                                    if host == '0.0.0.0':
-                                        host = 'localhost'
-                                    base_url = f"{protocol}://{host}:{port}"
-                                
-                                image_url = f"{base_url}/temp_image/{image_id}"
-                                image_urls.append(image_url)
-                                
-                                # 設置清理定時器
-                                def cleanup_image(img_id):
-                                    time.sleep(1800)
-                                    with temp_image_lock:
-                                        if img_id in temp_image_storage:
-                                            del temp_image_storage[img_id]
-                                
-                                threading.Thread(target=cleanup_image, args=(image_id,), daemon=True).start()
-                        else:
-                            print(f"[警告] 圖片 {i} 生成失敗")
-                            image_urls.append(None)
-                    else:
-                        print(f"[警告] picture_{i} 為空或無效")
-                        image_urls.append(None)
+                                # 舊格式處理 (base64)
+                                picture_data = parsed_data
+                            except json.JSONDecodeError:
+                                # 如果不是 JSON，假設它就是 URL (如果看起來像的話)
+                                if picture_data.startswith('http'):
+                                    return picture_data
+                                pass
+
+                        # 舊格式：處理 dict 中的 predictions -> bytesBase64Encoded
+                        if isinstance(picture_data, dict):
+                            # 提取 predictions 陣列中的 bytesBase64Encoded
+                            if "predictions" in picture_data and len(picture_data["predictions"]) > 0:
+                                prediction = picture_data["predictions"][0]
+                                if "bytesBase64Encoded" in prediction:
+                                    image_base64 = prediction["bytesBase64Encoded"]
+                                    
+                                    # 將 base64 轉換為 bytes
+                                    try:
+                                        image_bytes = base64.b64decode(image_base64)
+                                        print(f"[成功] picture_{index+1} base64 解碼成功，圖片大小: {len(image_bytes)} bytes")
+                                        
+                                        # 保存到臨時存儲並獲取 URL
+                                        global temp_image_counter
+                                        with temp_image_lock:
+                                            temp_image_counter += 1
+                                            image_id = f"img_{int(time.time())}_{temp_image_counter}"
+                                            temp_image_storage[image_id] = image_bytes
+                                            
+                                            base_url = os.getenv('BASE_URL', '')
+                                            if not base_url:
+                                                host = os.getenv('HOST', '0.0.0.0')
+                                                port = os.getenv('PORT', '5000')
+                                                protocol = 'https' if os.getenv('HTTPS', '').lower() == 'true' else 'http'
+                                                if host == '0.0.0.0':
+                                                    host = 'localhost'
+                                                base_url = f"{protocol}://{host}:{port}"
+                                            
+                                            image_url = f"{base_url}/temp_image/{image_id}"
+                                            
+                                            # 設置清理定時器
+                                            def cleanup_image(img_id):
+                                                time.sleep(1800)
+                                                with temp_image_lock:
+                                                    if img_id in temp_image_storage:
+                                                        del temp_image_storage[img_id]
+                                            
+                                            threading.Thread(target=cleanup_image, args=(image_id,), daemon=True).start()
+                                            return image_url
+                                    except Exception as decode_error:
+                                        print(f"[錯誤] picture_{index+1} base64 解碼失敗: {str(decode_error)}")
+                                        return None
+                            
+                            # 如果 dict 中有 url 字段 (可能是解析後的單個對象)
+                            if 'url' in picture_data:
+                                return picture_data['url']
+
+                        print(f"[錯誤] picture_{index+1} 格式無法識別或沒有 URL/Image 數據")
+                        return None
+
+                    except Exception as e:
+                        print(f"[錯誤] picture_{index+1} 處理失敗: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                        return None
+                
+                # 並行處理三張圖片
+                picture_data_list = [picture_1, picture_2, picture_3]
+                image_urls = [None, None, None]  # 預先分配，保持順序
+                
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    # 提交三個任務
+                    future_to_index = {
+                        executor.submit(parse_dify_image, picture_data, i): i 
+                        for i, picture_data in enumerate(picture_data_list)
+                    }
+                    
+                    # 收集結果（保持順序）
+                    for future in as_completed(future_to_index):
+                        index = future_to_index[future]
+                        try:
+                            image_url = future.result()
+                            image_urls[index] = image_url
+                        except Exception as e:
+                            print(f"處理圖片 {index+1} 失敗: {str(e)}")
+                            image_urls[index] = None
+                
+                image_gen_elapsed = time.time() - image_gen_start
+                print(f"[時間記錄] [3/4] Dify 圖片處理完成，總耗時: {image_gen_elapsed:.2f}秒")
                 
                 # 提取菜肴名稱（從 dish_1, dish_2, dish_3 中提取）
-                # import re
-                # dish_names = []
-                # for dish in [dish_1, dish_2, dish_3]:
-                #     if dish and isinstance(dish, str):
-                #         # 使用正則表達式提取 "### 菜餚名稱：XXX" 中的 XXX
-                #         match = re.search(r'###\s*菜餚名稱[：:]\s*(.+)', dish)
-                #         if match:
-                #             dish_name = match.group(1).strip().split('\n')[0]  # 只取第一行
-                #             dish_names.append(dish_name)
-                #         else:
-                #             # 如果找不到，使用前20個字符作為名稱
-                #             dish_names.append(dish[:20] if len(dish) > 20 else dish)
-                #     else:
-                #         dish_names.append("未知菜餚")
+                import re
+                dish_names = []
+                for dish in [dish_1, dish_2, dish_3]:
+                    if dish and isinstance(dish, str):
+                        # 使用正則表達式提取 "### 菜餚名稱：XXX" 或 "菜餚名稱：XXX" 中的 XXX
+                        match = re.search(r'(?:###\s*)?菜餚名稱[：:]\s*(.+)', dish)
+                        if match:
+                            dish_name = match.group(1).strip().split('\n')[0]  # 只取第一行
+                            dish_names.append(dish_name)
+                        else:
+                            # 如果找不到，使用前20個字符作為名稱
+                            dish_names.append(dish[:20] if len(dish) > 20 else dish)
+                    else:
+                        dish_names.append("未知菜餚")
                 
                 # 創建 Image Carousel columns
                 columns = []
@@ -1562,56 +2184,117 @@ class MessageFlowController:
                             }
                         })
                 
-                # 發送 Image Carousel（使用 reply_token，只使用一次）
+                # 步驟 7: 發送結果（添加時間記錄，使用 fallback 機制處理 reply_token 過期）
+                send_start = time.time()
+                print(f"[時間記錄] [4/4] 開始發送結果...")
+                
+                # 發送 Image Carousel（使用 fallback 機制，reply_token 過期時自動使用 push）
                 if len(columns) >= 3:
-                    print(f"正在發送 Image Carousel...")
-                    print(f"[除錯] columns 數量: {len(columns)}")
-                    # 打印每個 column 的信息
-                    for i, col in enumerate(columns, 1):
-                        img_url = col.get('imageUrl', 'N/A')
-                        action_data = col.get('action', {}).get('data', 'N/A')
-                        print(f"[除錯] Column {i}: imageUrl={img_url}, action.data={action_data}")
+                    success = self._send_message_with_fallback(user_id, reply_token, 'image_carousel', columns)
                     
-                    if reply_token:
-                        success = self.line_client.reply_image_carousel(reply_token, columns)
-                    else:
-                        success = self.line_client.send_image_carousel(user_id, columns)
+                    send_elapsed = time.time() - send_start
+                    print(f"[時間記錄] [4/4] 發送完成，耗時: {send_elapsed:.2f}秒")
                     
-                    if success:
-                        print("Image Carousel 已成功發送")
-                        return True
-                    else:
-                        print("Image Carousel 發送失敗")
-                        return False
+                    total_elapsed = time.time() - total_start_time
+                    print(f"[時間記錄] ========== 總耗時: {total_elapsed:.2f}秒 ==========")
+                    print(f"[時間記錄] 時間分布: 下載={download_elapsed:.1f}s, Dify={dify_elapsed:.1f}s, 圖片處理={image_gen_elapsed:.1f}s, 發送={send_elapsed:.1f}s")
+                    
+                    return success
                 elif len(columns) > 0:
                     # 如果圖片不足3張，仍然發送
-                    print(f"[警告] 圖片數量不足，只發送 {len(columns)} 張")
-                    if reply_token:
-                        success = self.line_client.reply_image_carousel(reply_token, columns)
-                    else:
-                        success = self.line_client.send_image_carousel(user_id, columns)
+                    success = self._send_message_with_fallback(user_id, reply_token, 'image_carousel', columns)
+                    
+                    send_elapsed = time.time() - send_start
+                    print(f"[時間記錄] [4/4] 發送完成，耗時: {send_elapsed:.2f}秒")
+                    
+                    total_elapsed = time.time() - total_start_time
+                    print(f"[時間記錄] ========== 總耗時: {total_elapsed:.2f}秒 ==========")
+                    
                     return success
                 else:
-                    print(f"[警告] 無法創建 Image Carousel：圖片生成失敗")
                     # 如果無法生成 Image Carousel，至少發送 text
-                    if reply_token:
-                        success = self.line_client.reply_message(reply_token, text)
-                    else:
-                        success = self.line_client.send_text_message(user_id, text)
+                    success = self._send_message_with_fallback(user_id, reply_token, 'text', text)
+                    
+                    send_elapsed = time.time() - send_start
+                    print(f"[時間記錄] [4/4] 發送完成，耗時: {send_elapsed:.2f}秒")
+                    
+                    total_elapsed = time.time() - total_start_time
+                    print(f"[時間記錄] ========== 總耗時: {total_elapsed:.2f}秒 ==========")
+                    
                     return success
             else:
-                print(f"[警告] 無法生成 Image Carousel：缺少 GEMINI_API_KEY 或提示詞")
                 # 如果無法生成 Image Carousel，至少發送 text
-                if reply_token:
-                    success = self.line_client.reply_message(reply_token, text)
-                else:
-                    success = self.line_client.send_text_message(user_id, text)
+                send_start = time.time()
+                print(f"[時間記錄] [4/4] 開始發送結果...")
+                
+                success = self._send_message_with_fallback(user_id, reply_token, 'text', text)
+                
+                send_elapsed = time.time() - send_start
+                print(f"[時間記錄] [4/4] 發送完成，耗時: {send_elapsed:.2f}秒")
+                
+                total_elapsed = time.time() - total_start_time
+                print(f"[時間記錄] ========== 總耗時: {total_elapsed:.2f}秒 ==========")
+                print(f"[時間記錄] 時間分布: 下載={download_elapsed:.1f}s, Dify={dify_elapsed:.1f}s, 發送={send_elapsed:.1f}s")
+                
                 return success
                 
         except Exception as e:
+            total_elapsed = time.time() - total_start_time if 'total_start_time' in locals() else 0
+            print(f"[時間記錄] 處理失敗，總耗時: {total_elapsed:.2f}秒")
             print(f"處理圖片事件失敗: {str(e)}")
             import traceback
             traceback.print_exc()
+            
+            # 發送錯誤訊息給用戶（使用 fallback 機制）
+            try:
+                user_id = events[0].get('user_id') if events else None
+                reply_token = events[0].get('reply_token') if events else None
+                if user_id:
+                    error_msg = "處理圖片時發生錯誤，請稍後再試。"
+                    self._send_message_with_fallback(user_id, reply_token, 'text', error_msg)
+            except:
+                pass  # 如果發送錯誤訊息也失敗，忽略
+            
+            return False
+    
+    def _send_message_with_fallback(self, user_id: str, reply_token: Optional[str], 
+                                    message_type: str, content: any) -> bool:
+        """
+        發送訊息，優先使用 reply_token，失敗則回退到 push message
+        
+        Args:
+            user_id: 使用者 ID
+            reply_token: 回覆 Token（可能為 None 或已過期）
+            message_type: 訊息類型 ('text', 'image_carousel')
+            content: 訊息內容（文字或 columns）
+        
+        Returns:
+            bool: 是否成功發送
+        """
+        if message_type == 'text':
+            # 發送文字訊息
+            if reply_token:
+                # 優先嘗試 reply，如果失敗則使用 push
+                success = self.line_client.reply_message(reply_token, content)
+                if not success:
+                    print(f"[提示] reply_token 可能已過期，改用 push message")
+                    success = self.line_client.send_text_message(user_id, content)
+                return success
+            else:
+                return self.line_client.send_text_message(user_id, content)
+        elif message_type == 'image_carousel':
+            # 發送 Image Carousel
+            if reply_token:
+                # 優先嘗試 reply，如果失敗則使用 push
+                success = self.line_client.reply_image_carousel(reply_token, content)
+                if not success:
+                    print(f"[提示] reply_token 可能已過期，改用 push message")
+                    success = self.line_client.send_image_carousel(user_id, content)
+                return success
+            else:
+                return self.line_client.send_image_carousel(user_id, content)
+        else:
+            print(f"[錯誤] 不支援的訊息類型: {message_type}")
             return False
     
     def forward_to_dify(self, image_data: bytes, user_id: str) -> Optional[str]:

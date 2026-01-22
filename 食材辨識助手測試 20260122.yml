@@ -1,0 +1,1854 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: 食材辨識助手測試 20260122
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.2.8@aae2be0913b8c6f0b80cff58e08d7a8b4c214569b41778413fcaea204561ff16
+    version: null
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/gemini:0.7.2@6e53b92877de2507ce83f2fc32ddf54a9662e4b5ef9e7e5d17bd18153a6485da
+    version: null
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: bowenliang123/base64_codec:1.0.1@034fdfa9602a2b207c0009adecb8998344dbb4f74a223c88680b477c83ee783b
+    version: null
+kind: app
+version: 0.5.0
+workflow:
+  conversation_variables: []
+  environment_variables:
+  - description: ''
+    id: 2331c9b2-396c-4aec-b40c-befaa713209e
+    name: cantfind
+    selector:
+    - env
+    - cantfind
+    value: 此圖片中找不到食材，請換一張圖片再嘗試。
+    value_type: string
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1765878102464-source-1765882755587-target
+      selected: false
+      source: '1765878102464'
+      sourceHandle: source
+      target: '1765882755587'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: if-else
+      id: 1765882755587-source-1766146460161-target
+      selected: false
+      source: '1765882755587'
+      sourceHandle: source
+      target: '1766146460161'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: 1766146460161-true-1766146490683-target
+      selected: false
+      source: '1766146460161'
+      sourceHandle: 'true'
+      target: '1766146490683'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: 1766146460161-false-1766196342349-target
+      selected: false
+      source: '1766146460161'
+      sourceHandle: 'false'
+      target: '1766196342349'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: 1766146460161-1c1395be-0ef9-4171-a9b9-37140d7aaad7-1766201522197-target
+      selected: false
+      source: '1766146460161'
+      sourceHandle: 1c1395be-0ef9-4171-a9b9-37140d7aaad7
+      target: '1766201522197'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 1766131614623-source-1766565230145-target
+      selected: false
+      source: '1766131614623'
+      sourceHandle: source
+      target: '1766565230145'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1766196342349-source-1765878387908-target
+      selected: false
+      source: '1766196342349'
+      sourceHandle: source
+      target: '1765878387908'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: 1766146460161-false-1766131614623-target
+      selected: false
+      source: '1766146460161'
+      sourceHandle: 'false'
+      target: '1766131614623'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: 1766565230145-source-1766137148034-target
+      selected: false
+      source: '1766565230145'
+      sourceHandle: source
+      target: '1766137148034'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: 1766565230145-source-17667984690090-target
+      selected: false
+      source: '1766565230145'
+      sourceHandle: source
+      target: '17667984690090'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: 1766565230145-source-17667984751220-target
+      selected: false
+      source: '1766565230145'
+      sourceHandle: source
+      target: '17667984751220'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 1766137148034-source-1768707175811-target
+      selected: false
+      source: '1766137148034'
+      sourceHandle: source
+      target: '1768707175811'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: http-request
+      id: 1768707175811-source-1768704151301-target
+      selected: false
+      source: '1768707175811'
+      sourceHandle: source
+      target: '1768704151301'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 17667984690090-source-1768707228335-target
+      selected: false
+      source: '17667984690090'
+      sourceHandle: source
+      target: '1768707228335'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: http-request
+      id: 1768707228335-source-17687042801030-target
+      selected: false
+      source: '1768707228335'
+      sourceHandle: source
+      target: '17687042801030'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 17667984751220-source-1768707283511-target
+      selected: false
+      source: '17667984751220'
+      sourceHandle: source
+      target: '1768707283511'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: http-request
+      id: 1768707283511-source-17687043035600-target
+      selected: false
+      source: '1768707283511'
+      sourceHandle: source
+      target: '17687043035600'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: code
+      id: 1768704151301-source-1768889656439-target
+      selected: false
+      source: '1768704151301'
+      sourceHandle: source
+      target: '1768889656439'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: tool
+      id: 1768889656439-source-1768891686422-target
+      selected: false
+      source: '1768889656439'
+      sourceHandle: source
+      target: '1768891686422'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: tool
+        targetType: end
+      id: 1768891686422-source-1765878387908-target
+      source: '1768891686422'
+      sourceHandle: source
+      target: '1765878387908'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: code
+      id: 17687042801030-source-1768895915655-target
+      source: '17687042801030'
+      sourceHandle: source
+      target: '1768895915655'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: code
+      id: 17687043035600-source-1768895954412-target
+      source: '17687043035600'
+      sourceHandle: source
+      target: '1768895954412'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: tool
+      id: 1768895915655-source-1768896099936-target
+      source: '1768895915655'
+      sourceHandle: source
+      target: '1768896099936'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: tool
+        targetType: end
+      id: 1768896099936-source-1765878387908-target
+      source: '1768896099936'
+      sourceHandle: source
+      target: '1765878387908'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: tool
+      id: 1768895954412-source-1768896171198-target
+      source: '1768895954412'
+      sourceHandle: source
+      target: '1768896171198'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: tool
+        targetType: end
+      id: 1768896171198-source-1765878387908-target
+      source: '1768896171198'
+      sourceHandle: source
+      target: '1765878387908'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 開始
+        type: start
+        variables:
+        - allowed_file_extensions: []
+          allowed_file_types:
+          - image
+          allowed_file_upload_methods:
+          - local_file
+          - remote_url
+          default: ''
+          hint: ''
+          label: foodphoto
+          max_length: 5
+          options: []
+          placeholder: ''
+          required: true
+          type: file-list
+          variable: foodphoto
+        - default: ''
+          hide: true
+          hint: ''
+          label: freshrecord
+          max_length: 48
+          options: []
+          placeholder: ''
+          required: false
+          type: text-input
+          variable: freshrecord
+      height: 134
+      id: '1765878102464'
+      position:
+        x: 737.133724638441
+        y: 320
+      positionAbsolute:
+        x: 737.133724638441
+        y: 320
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1766196342349'
+          - text
+          value_type: string
+          variable: text
+        - value_selector:
+          - '1768891686422'
+          - files
+          value_type: array[file]
+          variable: picture_1
+        - value_selector:
+          - '1768896099936'
+          - files
+          value_type: array[file]
+          variable: picture_2
+        - value_selector:
+          - '1768896171198'
+          - files
+          value_type: array[file]
+          variable: picture_3
+        - value_selector:
+          - '1766565230145'
+          - dish_1
+          value_type: string
+          variable: dish_1
+        - value_selector:
+          - '1766565230145'
+          - dish_2
+          value_type: string
+          variable: dish_2
+        - value_selector:
+          - '1766565230145'
+          - dish_3
+          value_type: string
+          variable: dish_3
+        selected: false
+        title: 輸出
+        type: end
+      height: 243
+      id: '1765878387908'
+      position:
+        x: 5497.6383940816
+        y: 24.653953865615165
+      positionAbsolute:
+        x: 5497.6383940816
+        y: 24.653953865615165
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params: {}
+          mode: chat
+          name: gemini-2.5-flash-image
+          provider: langgenius/gemini/google
+        prompt_template:
+        - id: 5f708c79-2997-44d9-bb00-2ddc4fd5d74a
+          role: system
+          text: '請根據{{#1765878102464.foodphoto#}}分析有甚麼食材，回傳食材與食材的份量
+
+            單純傳食材與份量，不用加其他文字。
+
+            回傳的訊息不要使用粗體字、斜體字等，直接回傳文字。
+
+            如果分量為"適量"請將份量改為1份
+
+            如果找不到食材，請回答 找不到食材'
+        selected: false
+        title: 食材檢測
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1765882755587'
+      position:
+        x: 1017.5412894428639
+        y: 341
+      positionAbsolute:
+        x: 1017.5412894428639
+        y: 341
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: dca398bd-b039-45be-bd02-90894c644c6e
+          role: system
+          text: "請根據 {{#1765882755587.text#}} 推薦三道不同的家常料理。\n\n⚠️ 請務必嚴格遵守以下輸出規則：\n\n\
+            1. 總共只輸出三道菜\n2. 每一道菜之間，必須用「空行 + --- + 空行」作為分隔符\n   （也就是：\\n\\n---\\n\\\
+            n）\n3. 除了菜譜內容與分隔符外，不要輸出任何多餘文字\n\n每一道菜請使用以下格式：\n\n菜餚名稱：XXX\n\n食材：\n(列出所有食材，依序編號)\n\
+            \n步驟：\n(請列出 3–6 個清楚且可實作的料理步驟，依序編號)\n"
+        selected: false
+        title: 食譜生成
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1766131614623'
+      position:
+        x: 1680.7233043067586
+        y: 320.551466305606
+      positionAbsolute:
+        x: 1680.7233043067586
+        y: 320.551466305606
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: e10ecd49-18ab-4f72-b78d-91d05622011d
+          role: system
+          text: '請根據 {{#1766565230145.dish_1#}} 的內容，生成「提供給圖像生成模型（如 Stable Diffusion）」使用的參數。
+
+            你必須嚴格遵守以下所有規則，否則輸出將被視為無效。
+
+            【最重要輸出規則】
+
+            最終輸出 只能是純 JSON
+
+            不可使用 Markdown
+
+            不可使用 、json 或任何程式碼區塊
+
+            不可在 JSON 前後輸出任何說明、註解、空白文字
+
+            輸出內容必須可被 json.loads() 直接解析
+
+            JSON 內所有值必須是字串（string）
+
+            【JSON 結構（不可更動）】
+
+            {
+
+            "prompt": "english prompt"
+
+            }
+
+            【prompt 生成規則】
+
+            忽略：做法、步驟、營養、碳足跡、對話文字
+
+            將內容轉換為適合 Stable Diffusion / SDXL 使用的英文提示詞
+
+            圖像主題必須是「完成後的食物成品」
+
+            風格偏向：
+
+            appetizing
+
+            high quality food photography
+
+            realistic
+
+            professional lighting
+
+            提示詞內容可包含（依實際內容選用）：
+
+            食物外觀（shape, texture）
+
+            顏色與光澤（color, gloss, moisture）
+
+            擺盤與容器（plating, bowl, plate）
+
+            攝影角度（close-up, top-down, 45-degree）
+
+            燈光（soft light, studio lighting, natural light）
+
+            背景（clean background, wooden table, minimal style）
+
+            不可加入人物、手、文字、水印、logo
+
+            不可加入任何與圖片生成無關的敘述
+
+
+            【最終檢查（非常重要）】
+
+            僅輸出 JSON
+
+            不要解釋
+
+            不要加註
+
+            不要換句話說
+
+            不要在 JSON 外輸出任何文字'
+        selected: false
+        title: A生成圖片提示詞
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1766137148034'
+      position:
+        x: 2355.1179014441177
+        y: 156.89600626309254
+      positionAbsolute:
+        x: 2355.1179014441177
+        y: 156.89600626309254
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: 8e223e5e-b2e8-4800-8433-40c763d1bd83
+            value: 找不到食材
+            varType: string
+            variable_selector:
+            - '1765882755587'
+            - text
+          id: 'true'
+          logical_operator: and
+        - case_id: 1c1395be-0ef9-4171-a9b9-37140d7aaad7
+          conditions:
+          - comparison_operator: contains
+            id: e85f8239-02d2-467e-be56-3ddb90bac629
+            value: 'True'
+            varType: string
+            variable_selector:
+            - '1765878102464'
+            - freshrecord
+          id: 1c1395be-0ef9-4171-a9b9-37140d7aaad7
+          logical_operator: and
+        selected: false
+        title: 條件分支
+        type: if-else
+      height: 171
+      id: '1766146460161'
+      position:
+        x: 1314.789100701133
+        y: 210.54128944286595
+      positionAbsolute:
+        x: 1314.789100701133
+        y: 210.54128944286595
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        outputs:
+        - value_selector:
+          - env
+          - cantfind
+          value_type: string
+          variable: text
+        selected: false
+        title: 找不到食材
+        type: end
+      height: 88
+      id: '1766146490683'
+      position:
+        x: 1680.7233043067586
+        y: 45.271477378113474
+      positionAbsolute:
+        x: 1680.7233043067586
+        y: 45.271477378113474
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: ec2aa298-f87f-40df-b9ef-53e93bcc99bd
+          role: system
+          text: '你是一個數據計算助手。請根據 {{#1765882755587.text#}} 計算食材的碳足跡與熱量，**僅輸出以下格式**：
+
+
+            碳足跡:
+
+            1. 食材名稱 (數量) - X kg CO2e
+
+            2. 食材名稱 (數量) - X kg CO2e
+
+            ...
+
+            碳足跡加總: X kg CO2e
+
+
+            熱量:
+
+            1. 食材名稱 (數量) - X 卡路里
+
+            2. 食材名稱 (數量) - X 卡路里
+
+            ...
+
+            熱量加總: X 卡路里
+
+
+            **規則：**
+
+            1. 不要任何前置說明或解釋。
+
+            2. 不要任何結尾說明或「最終輸出」之類文字。
+
+            3. 不要列出額外資訊。
+
+            4. 只列出食材名稱、數量、碳足跡、熱量，以及加總。
+
+            5. 編號需依序排列。
+
+            6. 數值需準確計算。
+
+            '
+        selected: false
+        title: 計算碳足跡與熱量
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1766196342349'
+      position:
+        x: 2355.1179014441177
+        y: 836.7730350592044
+      positionAbsolute:
+        x: 2355.1179014441177
+        y: 836.7730350592044
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        outputs:
+        - value_selector:
+          - '1765882755587'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 連接SQL
+        type: end
+      height: 87
+      id: '1766201522197'
+      position:
+        x: 1680.7233043067586
+        y: 175.721853015277
+      positionAbsolute:
+        x: 1680.7233043067586
+        y: 175.721853015277
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "import re\n\ndef main(arg1: str):\n    # 將字串形式的 \\n 轉成真正換行\n    normalized\
+          \ = arg1.replace(\"\\\\n\", \"\\n\")\n\n    # 用正則分割，忽略前後空格或多個換行\n    dishes\
+          \ = [\n        d.strip()\n        for d in re.split(r\"\\n\\s*---\\s*\\\
+          n\", normalized)\n        if d.strip()\n    ]\n\n    # 回傳三道菜\n    return\
+          \ {\n        \"dish_1\": dishes[0] if len(dishes) > 0 else \"\",\n     \
+          \   \"dish_2\": dishes[1] if len(dishes) > 1 else \"\",\n        \"dish_3\"\
+          : dishes[2] if len(dishes) > 2 else \"\",\n    }\n"
+        code_language: python3
+        outputs:
+          dish_1:
+            children: null
+            type: string
+          dish_2:
+            children: null
+            type: string
+          dish_3:
+            children: null
+            type: string
+        selected: false
+        title: 程式碼執行 3
+        type: code
+        variables:
+        - value_selector:
+          - '1766131614623'
+          - text
+          value_type: string
+          variable: arg1
+      height: 51
+      id: '1766565230145'
+      position:
+        x: 2023.5483714960733
+        y: 320.551466305606
+      positionAbsolute:
+        x: 2023.5483714960733
+        y: 320.551466305606
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: e10ecd49-18ab-4f72-b78d-91d05622011d
+          role: system
+          text: '請根據 {{#1766565230145.dish_2#}} 的內容，生成「提供給圖像生成模型（如 Stable Diffusion）」使用的參數。
+
+            你必須嚴格遵守以下所有規則，否則輸出將被視為無效。
+
+            【最重要輸出規則】
+
+            最終輸出 只能是純 JSON
+
+            不可使用 Markdown
+
+            不可使用 、json 或任何程式碼區塊
+
+            不可在 JSON 前後輸出任何說明、註解、空白文字
+
+            輸出內容必須可被 json.loads() 直接解析
+
+            JSON 內所有值必須是字串（string）
+
+            【JSON 結構（不可更動）】
+
+            {
+
+            "prompt": "english prompt"
+
+            }
+
+            【prompt 生成規則】
+
+            忽略：做法、步驟、營養、碳足跡、對話文字
+
+            將內容轉換為適合 Stable Diffusion / SDXL 使用的英文提示詞
+
+            圖像主題必須是「完成後的食物成品」
+
+            風格偏向：
+
+            appetizing
+
+            high quality food photography
+
+            realistic
+
+            professional lighting
+
+            提示詞內容可包含（依實際內容選用）：
+
+            食物外觀（shape, texture）
+
+            顏色與光澤（color, gloss, moisture）
+
+            擺盤與容器（plating, bowl, plate）
+
+            攝影角度（close-up, top-down, 45-degree）
+
+            燈光（soft light, studio lighting, natural light）
+
+            背景（clean background, wooden table, minimal style）
+
+            不可加入人物、手、文字、水印、logo
+
+            不可加入任何與圖片生成無關的敘述
+
+
+            【最終檢查（非常重要）】
+
+            僅輸出 JSON
+
+            不要解釋
+
+            不要加註
+
+            不要換句話說
+
+            不要在 JSON 外輸出任何文字'
+        selected: false
+        title: B生成圖片提示詞
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '17667984690090'
+      position:
+        x: 2355.1179014441177
+        y: 297.70804755021953
+      positionAbsolute:
+        x: 2355.1179014441177
+        y: 297.70804755021953
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.7
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: e10ecd49-18ab-4f72-b78d-91d05622011d
+          role: system
+          text: '請根據 {{#1766565230145.dish_3#}} 的內容，生成「提供給圖像生成模型（如 Stable Diffusion）」使用的參數。
+
+            你必須嚴格遵守以下所有規則，否則輸出將被視為無效。
+
+            【最重要輸出規則】
+
+            最終輸出 只能是純 JSON
+
+            不可使用 Markdown
+
+            不可使用 、json 或任何程式碼區塊
+
+            不可在 JSON 前後輸出任何說明、註解、空白文字
+
+            輸出內容必須可被 json.loads() 直接解析
+
+            JSON 內所有值必須是字串（string）
+
+            【JSON 結構（不可更動）】
+
+            {
+
+            "prompt": "english prompt"
+
+            }
+
+            【prompt 生成規則】
+
+            忽略：做法、步驟、營養、碳足跡、對話文字
+
+            將內容轉換為適合 Stable Diffusion / SDXL 使用的英文提示詞
+
+            圖像主題必須是「完成後的食物成品」
+
+            風格偏向：
+
+            appetizing
+
+            high quality food photography
+
+            realistic
+
+            professional lighting
+
+            提示詞內容可包含（依實際內容選用）：
+
+            食物外觀（shape, texture）
+
+            顏色與光澤（color, gloss, moisture）
+
+            擺盤與容器（plating, bowl, plate）
+
+            攝影角度（close-up, top-down, 45-degree）
+
+            燈光（soft light, studio lighting, natural light）
+
+            背景（clean background, wooden table, minimal style）
+
+            不可加入人物、手、文字、水印、logo
+
+            不可加入任何與圖片生成無關的敘述
+
+
+            【最終檢查（非常重要）】
+
+            僅輸出 JSON
+
+            不要解釋
+
+            不要加註
+
+            不要換句話說
+
+            不要在 JSON 外輸出任何文字'
+        selected: false
+        title: C生成圖片提示詞
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '17667984751220'
+      position:
+        x: 2355.1179014441177
+        y: 461.8032210941885
+      positionAbsolute:
+        x: 2355.1179014441177
+        y: 461.8032210941885
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - id: key-value-145
+            key: ''
+            type: text
+            value: "{\n        \"instances\": [\n          {\n            \"prompt\"\
+              : \"{{#1768707175811.prompt#}}\"\n          }\n        ],\n        \"\
+              parameters\": {\n          \"sampleCount\": 1\n        }\n      }"
+          type: json
+        headers: 'Content-Type:application/json
+
+          x-goog-api-key:YOUR_API_KEY'
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 3
+          retry_enabled: true
+          retry_interval: 100
+        selected: false
+        ssl_verify: true
+        timeout:
+          max_connect_timeout: 0
+          max_read_timeout: 0
+          max_write_timeout: 0
+        title: HTTP A
+        type: http-request
+        url: https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict
+        variables: []
+      height: 168
+      id: '1768704151301'
+      position:
+        x: 3249.874205740077
+        y: -190.97315297724097
+      positionAbsolute:
+        x: 3249.874205740077
+        y: -190.97315297724097
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - id: key-value-145
+            key: ''
+            type: text
+            value: "{\n        \"instances\": [\n          {\n            \"prompt\"\
+              : \"{{#1768707228335.prompt#}}\"\n          }\n        ],\n        \"\
+              parameters\": {\n          \"sampleCount\": 1\n        }\n      }"
+          type: json
+        headers: 'Content-Type:application/json
+
+          x-goog-api-key:YOUR_API_KEY'
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 3
+          retry_enabled: true
+          retry_interval: 100
+        selected: false
+        ssl_verify: true
+        timeout:
+          max_connect_timeout: 0
+          max_read_timeout: 0
+          max_write_timeout: 0
+        title: HTTP B
+        type: http-request
+        url: https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict
+        variables: []
+      height: 168
+      id: '17687042801030'
+      position:
+        x: 3249.874205740077
+        y: 80.36987672834152
+      positionAbsolute:
+        x: 3249.874205740077
+        y: 80.36987672834152
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        authorization:
+          config: null
+          type: no-auth
+        body:
+          data:
+          - id: key-value-145
+            key: ''
+            type: text
+            value: "{\n        \"instances\": [\n          {\n            \"prompt\"\
+              : \"{{#1768707283511.prompt#}}\"\n          }\n        ],\n        \"\
+              parameters\": {\n          \"sampleCount\": 1\n        }\n      }"
+          type: json
+        headers: 'Content-Type:application/json
+
+          x-goog-api-key:YOUR_API_KEY'
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 3
+          retry_enabled: true
+          retry_interval: 100
+        selected: true
+        ssl_verify: true
+        timeout:
+          max_connect_timeout: 0
+          max_read_timeout: 0
+          max_write_timeout: 0
+        title: HTTP C
+        type: http-request
+        url: https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict
+        variables: []
+      height: 168
+      id: '17687043035600'
+      position:
+        x: 3242.763211425581
+        y: 310.2842360951657
+      positionAbsolute:
+        x: 3242.763211425581
+        y: 310.2842360951657
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "import json\nimport re\n\ndef main(input_data) -> dict:\n    \"\"\"\
+          \n    提取 prompt 並清除所有 {} 字元\n    \"\"\"\n    try:\n        # 確保輸入是字串\n \
+          \       if not isinstance(input_data, str):\n            input_data = str(input_data)\n\
+          \        \n        # 解析 JSON\n        outer_json = json.loads(input_data)\n\
+          \        text_value = outer_json.get('text', '')\n        \n        # 解析\
+          \ text 欄位（它是 JSON 字串）\n        if isinstance(text_value, str):\n       \
+          \     inner_json = json.loads(text_value)\n            prompt = inner_json.get('prompt',\
+          \ '')\n        else:\n            prompt = str(text_value)\n        \n \
+          \       # 清理：移除 {} 字元和其他特殊字元\n        prompt = str(prompt)\n        prompt\
+          \ = prompt.replace('{', '')      # 移除 {\n        prompt = prompt.replace('}',\
+          \ '')      # 移除 }\n        prompt = prompt.replace('\\\\n', ' ')   # 移除轉義的換行\n\
+          \        prompt = prompt.replace('\\n', ' ')    # 移除實際換行\n        prompt\
+          \ = prompt.replace('\\\\\"', '\"')   # 移除轉義的引號\n        prompt = prompt.replace('\\\
+          t', ' ')    # 移除 Tab\n        prompt = ' '.join(prompt.split())     # 移除多餘空白\n\
+          \        prompt = prompt.strip()               # 移除首尾空白\n        \n    \
+          \    return {\n            \"prompt\": prompt\n        }\n        \n   \
+          \ except Exception as e:\n        # 錯誤處理\n        cleaned = str(input_data)\n\
+          \        cleaned = cleaned.replace('{', '').replace('}', '')\n        cleaned\
+          \ = ' '.join(cleaned.split()).strip()\n        return {\n            \"\
+          prompt\": cleaned,\n        }"
+        code_language: python3
+        outputs:
+          prompt:
+            children: null
+            type: string
+        selected: false
+        title: 程式碼執行 2
+        type: code
+        variables:
+        - value_selector:
+          - '1766137148034'
+          - text
+          value_type: string
+          variable: input_data
+      height: 51
+      id: '1768707175811'
+      position:
+        x: 2949.874205740077
+        y: -190.97315297724097
+      positionAbsolute:
+        x: 2949.874205740077
+        y: -190.97315297724097
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "import json\nimport re\n\ndef main(input_data) -> dict:\n    \"\"\"\
+          \n    提取 prompt 並清除所有 {} 字元\n    \"\"\"\n    try:\n        # 確保輸入是字串\n \
+          \       if not isinstance(input_data, str):\n            input_data = str(input_data)\n\
+          \        \n        # 解析 JSON\n        outer_json = json.loads(input_data)\n\
+          \        text_value = outer_json.get('text', '')\n        \n        # 解析\
+          \ text 欄位（它是 JSON 字串）\n        if isinstance(text_value, str):\n       \
+          \     inner_json = json.loads(text_value)\n            prompt = inner_json.get('prompt',\
+          \ '')\n        else:\n            prompt = str(text_value)\n        \n \
+          \       # 清理：移除 {} 字元和其他特殊字元\n        prompt = str(prompt)\n        prompt\
+          \ = prompt.replace('{', '')      # 移除 {\n        prompt = prompt.replace('}',\
+          \ '')      # 移除 }\n        prompt = prompt.replace('\\\\n', ' ')   # 移除轉義的換行\n\
+          \        prompt = prompt.replace('\\n', ' ')    # 移除實際換行\n        prompt\
+          \ = prompt.replace('\\\\\"', '\"')   # 移除轉義的引號\n        prompt = prompt.replace('\\\
+          t', ' ')    # 移除 Tab\n        prompt = ' '.join(prompt.split())     # 移除多餘空白\n\
+          \        prompt = prompt.strip()               # 移除首尾空白\n        \n    \
+          \    return {\n            \"prompt\": prompt\n        }\n        \n   \
+          \ except Exception as e:\n        # 錯誤處理\n        cleaned = str(input_data)\n\
+          \        cleaned = cleaned.replace('{', '').replace('}', '')\n        cleaned\
+          \ = ' '.join(cleaned.split()).strip()\n        return {\n            \"\
+          prompt\": cleaned,\n        }"
+        code_language: python3
+        outputs:
+          prompt:
+            children: null
+            type: string
+        selected: false
+        title: 程式碼執行 3
+        type: code
+        variables:
+        - value_selector:
+          - '17667984690090'
+          - text
+          value_type: string
+          variable: input_data
+      height: 51
+      id: '1768707228335'
+      position:
+        x: 2949.874205740077
+        y: 80.36987672834152
+      positionAbsolute:
+        x: 2949.874205740077
+        y: 80.36987672834152
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "import json\nimport re\n\ndef main(input_data) -> dict:\n    \"\"\"\
+          \n    提取 prompt 並清除所有 {} 字元\n    \"\"\"\n    try:\n        # 確保輸入是字串\n \
+          \       if not isinstance(input_data, str):\n            input_data = str(input_data)\n\
+          \        \n        # 解析 JSON\n        outer_json = json.loads(input_data)\n\
+          \        text_value = outer_json.get('text', '')\n        \n        # 解析\
+          \ text 欄位（它是 JSON 字串）\n        if isinstance(text_value, str):\n       \
+          \     inner_json = json.loads(text_value)\n            prompt = inner_json.get('prompt',\
+          \ '')\n        else:\n            prompt = str(text_value)\n        \n \
+          \       # 清理：移除 {} 字元和其他特殊字元\n        prompt = str(prompt)\n        prompt\
+          \ = prompt.replace('{', '')      # 移除 {\n        prompt = prompt.replace('}',\
+          \ '')      # 移除 }\n        prompt = prompt.replace('\\\\n', ' ')   # 移除轉義的換行\n\
+          \        prompt = prompt.replace('\\n', ' ')    # 移除實際換行\n        prompt\
+          \ = prompt.replace('\\\\\"', '\"')   # 移除轉義的引號\n        prompt = prompt.replace('\\\
+          t', ' ')    # 移除 Tab\n        prompt = ' '.join(prompt.split())     # 移除多餘空白\n\
+          \        prompt = prompt.strip()               # 移除首尾空白\n        \n    \
+          \    return {\n            \"prompt\": prompt\n        }\n        \n   \
+          \ except Exception as e:\n        # 錯誤處理\n        cleaned = str(input_data)\n\
+          \        cleaned = cleaned.replace('{', '').replace('}', '')\n        cleaned\
+          \ = ' '.join(cleaned.split()).strip()\n        return {\n            \"\
+          prompt\": cleaned,\n        }"
+        code_language: python3
+        outputs:
+          prompt:
+            children: null
+            type: string
+        selected: false
+        title: 程式碼執行 4
+        type: code
+        variables:
+        - value_selector:
+          - '17667984751220'
+          - text
+          value_type: string
+          variable: input_data
+      height: 51
+      id: '1768707283511'
+      position:
+        x: 2949.874205740077
+        y: 310.2842360951657
+      positionAbsolute:
+        x: 2949.874205740077
+        y: 310.2842360951657
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "import json\n\ndef main(arg1: str) -> dict:\n    # arg1 是上一個節點傳入的 JSON\
+          \ 字串\n    data = json.loads(arg1)\n    \n    # 提取 base64 圖片數據\n    base64_image\
+          \ = data[\"predictions\"][0][\"bytesBase64Encoded\"]\n    \n    return {\n\
+          \        \"result\": base64_image\n    }"
+        code_language: python3
+        outputs:
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 程式碼執行 5
+        type: code
+        variables:
+        - value_selector:
+          - '1768704151301'
+          - body
+          value_type: string
+          variable: arg1
+      height: 51
+      id: '1768889656439'
+      position:
+        x: 3586.7361261677133
+        y: -190.97315297724097
+      positionAbsolute:
+        x: 3586.7361261677133
+        y: -190.97315297724097
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        is_team_authorization: true
+        paramSchemas:
+        - auto_generate: null
+          default: null
+          form: llm
+          human_description:
+            en_US: Base64 encoded image string, default convert to PNG, support PNG
+              ("data:image/png;base64" prefix) and JPG ("data:image/jpeg;base64" prefix),
+              multiple output files are supported when using the delimiter
+            ja_JP: Base64 encoded image string, default convert to PNG, support PNG
+              ("data:image/png;base64" prefix) and JPG ("data:image/jpeg;base64" prefix),
+              multiple output files are supported when using the delimiter
+            pt_BR: Base64 encoded image string, default convert to PNG, support PNG
+              ("data:image/png;base64" prefix) and JPG ("data:image/jpeg;base64" prefix),
+              multiple output files are supported when using the delimiter
+            zh_Hans: Base64 编码的图片字符串，默认转为PNG格式，支持PNG格式（data:image/png;base64开头）及JPG格式（data:image/jpeg;base64开头）,
+              支持使用分隔符分割多个文件
+          label:
+            en_US: Base64 encoded Text
+            ja_JP: Base64 encoded Text
+            pt_BR: Base64 encoded Text
+            zh_Hans: 已 Base64 编码的图片字符串
+          llm_description: A tool for decoding Base64-encoded text to image file
+          max: null
+          min: null
+          name: encoded_text
+          options: []
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: null
+          form: llm
+          human_description:
+            en_US: Optional output filename(s), one per line.
+            ja_JP: Optional output filename(s), one per line.
+            pt_BR: Optional output filename(s), one per line.
+            zh_Hans: 每行一个，非必填。
+          label:
+            en_US: Filename of the output file
+            ja_JP: Filename of the output file
+            pt_BR: Filename of the output file
+            zh_Hans: 输出文件名
+          llm_description: ''
+          max: null
+          min: null
+          name: output_filename
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: '
+
+
+            '
+          form: llm
+          human_description:
+            en_US: Support multiple segments of Base64 encoded text, split by the
+              delimiter and decode them into multiple files sequentially
+            ja_JP: Support multiple segments of Base64 encoded text, split by the
+              delimiter and decode them into multiple files sequentially
+            pt_BR: Support multiple segments of Base64 encoded text, split by the
+              delimiter and decode them into multiple files sequentially
+            zh_Hans: 支持多段Base64编码文本，按分隔符拆分后依次解码为多个文件
+          label:
+            en_US: Delimiter
+            ja_JP: Delimiter
+            pt_BR: Delimiter
+            zh_Hans: 分隔符
+          llm_description: A tool for decoding Base64-encoded text to file file
+          max: null
+          min: null
+          name: splitter_str
+          options: []
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: string
+        params:
+          encoded_text: ''
+          output_filename: ''
+          splitter_str: ''
+        plugin_id: bowenliang123/base64_codec
+        plugin_unique_identifier: bowenliang123/base64_codec:1.0.1@034fdfa9602a2b207c0009adecb8998344dbb4f74a223c88680b477c83ee783b
+        provider_icon: http://34.146.3.67/console/api/workspaces/current/plugin/icon?tenant_id=c32fcc46-4027-48d4-bd89-6a1039337269&filename=cebbda2083c25c484bb939ab05f656c605dfabd2f0ca9c42f767737052b4977a.png
+        provider_id: bowenliang123/base64_codec/base64_codec
+        provider_name: bowenliang123/base64_codec/base64_codec
+        provider_type: builtin
+        selected: false
+        title: Base64 A
+        tool_configurations: {}
+        tool_description: Decode Base64-encoded text to an image file
+        tool_label: Base64 ⮕ Image File(s)
+        tool_name: base64_image_decoder
+        tool_node_version: '2'
+        tool_parameters:
+          encoded_text:
+            type: mixed
+            value: '{{#1768889656439.result#}}'
+          output_filename:
+            type: mixed
+            value: null
+          splitter_str:
+            type: mixed
+            value: \n\n
+        type: tool
+      height: 51
+      id: '1768891686422'
+      position:
+        x: 3927.547676257418
+        y: -190.97315297724097
+      positionAbsolute:
+        x: 3927.547676257418
+        y: -190.97315297724097
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "import json\n\ndef main(arg1: str) -> dict:\n    # arg1 是上一個節點傳入的 JSON\
+          \ 字串\n    data = json.loads(arg1)\n    \n    # 提取 base64 圖片數據\n    base64_image\
+          \ = data[\"predictions\"][0][\"bytesBase64Encoded\"]\n    \n    return {\n\
+          \        \"result\": base64_image\n    }"
+        code_language: python3
+        outputs:
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 程式碼執行 6
+        type: code
+        variables:
+        - value_selector:
+          - '17687042801030'
+          - body
+          value_type: string
+          variable: arg1
+      height: 51
+      id: '1768895915655'
+      position:
+        x: 3580.5371696307966
+        y: 80.36987672834152
+      positionAbsolute:
+        x: 3580.5371696307966
+        y: 80.36987672834152
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        code: "import json\n\ndef main(arg1: str) -> dict:\n    # arg1 是上一個節點傳入的 JSON\
+          \ 字串\n    data = json.loads(arg1)\n    \n    # 提取 base64 圖片數據\n    base64_image\
+          \ = data[\"predictions\"][0][\"bytesBase64Encoded\"]\n    \n    return {\n\
+          \        \"result\": base64_image\n    }"
+        code_language: python3
+        outputs:
+          result:
+            children: null
+            type: string
+        selected: false
+        title: 程式碼執行 7
+        type: code
+        variables:
+        - value_selector:
+          - '17687043035600'
+          - body
+          value_type: string
+          variable: arg1
+      height: 51
+      id: '1768895954412'
+      position:
+        x: 3580.5371696307966
+        y: 303.08889595508396
+      positionAbsolute:
+        x: 3580.5371696307966
+        y: 303.08889595508396
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        is_team_authorization: true
+        paramSchemas:
+        - auto_generate: null
+          default: null
+          form: llm
+          human_description:
+            en_US: Base64 encoded image string, default convert to PNG, support PNG
+              ("data:image/png;base64" prefix) and JPG ("data:image/jpeg;base64" prefix),
+              multiple output files are supported when using the delimiter
+            ja_JP: Base64 encoded image string, default convert to PNG, support PNG
+              ("data:image/png;base64" prefix) and JPG ("data:image/jpeg;base64" prefix),
+              multiple output files are supported when using the delimiter
+            pt_BR: Base64 encoded image string, default convert to PNG, support PNG
+              ("data:image/png;base64" prefix) and JPG ("data:image/jpeg;base64" prefix),
+              multiple output files are supported when using the delimiter
+            zh_Hans: Base64 编码的图片字符串，默认转为PNG格式，支持PNG格式（data:image/png;base64开头）及JPG格式（data:image/jpeg;base64开头）,
+              支持使用分隔符分割多个文件
+          label:
+            en_US: Base64 encoded Text
+            ja_JP: Base64 encoded Text
+            pt_BR: Base64 encoded Text
+            zh_Hans: 已 Base64 编码的图片字符串
+          llm_description: A tool for decoding Base64-encoded text to image file
+          max: null
+          min: null
+          name: encoded_text
+          options: []
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: null
+          form: llm
+          human_description:
+            en_US: Optional output filename(s), one per line.
+            ja_JP: Optional output filename(s), one per line.
+            pt_BR: Optional output filename(s), one per line.
+            zh_Hans: 每行一个，非必填。
+          label:
+            en_US: Filename of the output file
+            ja_JP: Filename of the output file
+            pt_BR: Filename of the output file
+            zh_Hans: 输出文件名
+          llm_description: ''
+          max: null
+          min: null
+          name: output_filename
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: '
+
+
+            '
+          form: llm
+          human_description:
+            en_US: Support multiple segments of Base64 encoded text, split by the
+              delimiter and decode them into multiple files sequentially
+            ja_JP: Support multiple segments of Base64 encoded text, split by the
+              delimiter and decode them into multiple files sequentially
+            pt_BR: Support multiple segments of Base64 encoded text, split by the
+              delimiter and decode them into multiple files sequentially
+            zh_Hans: 支持多段Base64编码文本，按分隔符拆分后依次解码为多个文件
+          label:
+            en_US: Delimiter
+            ja_JP: Delimiter
+            pt_BR: Delimiter
+            zh_Hans: 分隔符
+          llm_description: A tool for decoding Base64-encoded text to file file
+          max: null
+          min: null
+          name: splitter_str
+          options: []
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: string
+        params:
+          encoded_text: ''
+          output_filename: ''
+          splitter_str: ''
+        plugin_id: bowenliang123/base64_codec
+        plugin_unique_identifier: bowenliang123/base64_codec:1.0.1@034fdfa9602a2b207c0009adecb8998344dbb4f74a223c88680b477c83ee783b
+        provider_icon: https://nowastechef.work/console/api/workspaces/current/plugin/icon?tenant_id=c32fcc46-4027-48d4-bd89-6a1039337269&filename=cebbda2083c25c484bb939ab05f656c605dfabd2f0ca9c42f767737052b4977a.png
+        provider_id: bowenliang123/base64_codec/base64_codec
+        provider_name: bowenliang123/base64_codec/base64_codec
+        provider_type: builtin
+        selected: false
+        title: Base64 B
+        tool_configurations: {}
+        tool_description: Decode Base64-encoded text to an image file
+        tool_label: Base64 ⮕ Image File(s)
+        tool_name: base64_image_decoder
+        tool_node_version: '2'
+        tool_parameters:
+          encoded_text:
+            type: mixed
+            value: '{{#1768895915655.result#}}'
+          output_filename:
+            type: mixed
+            value: null
+          splitter_str:
+            type: mixed
+            value: \n\n
+        type: tool
+      height: 51
+      id: '1768896099936'
+      position:
+        x: 3927.547676257418
+        y: 80.36987672834152
+      positionAbsolute:
+        x: 3927.547676257418
+        y: 80.36987672834152
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        is_team_authorization: true
+        paramSchemas:
+        - auto_generate: null
+          default: null
+          form: llm
+          human_description:
+            en_US: Base64 encoded image string, default convert to PNG, support PNG
+              ("data:image/png;base64" prefix) and JPG ("data:image/jpeg;base64" prefix),
+              multiple output files are supported when using the delimiter
+            ja_JP: Base64 encoded image string, default convert to PNG, support PNG
+              ("data:image/png;base64" prefix) and JPG ("data:image/jpeg;base64" prefix),
+              multiple output files are supported when using the delimiter
+            pt_BR: Base64 encoded image string, default convert to PNG, support PNG
+              ("data:image/png;base64" prefix) and JPG ("data:image/jpeg;base64" prefix),
+              multiple output files are supported when using the delimiter
+            zh_Hans: Base64 编码的图片字符串，默认转为PNG格式，支持PNG格式（data:image/png;base64开头）及JPG格式（data:image/jpeg;base64开头）,
+              支持使用分隔符分割多个文件
+          label:
+            en_US: Base64 encoded Text
+            ja_JP: Base64 encoded Text
+            pt_BR: Base64 encoded Text
+            zh_Hans: 已 Base64 编码的图片字符串
+          llm_description: A tool for decoding Base64-encoded text to image file
+          max: null
+          min: null
+          name: encoded_text
+          options: []
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: null
+          form: llm
+          human_description:
+            en_US: Optional output filename(s), one per line.
+            ja_JP: Optional output filename(s), one per line.
+            pt_BR: Optional output filename(s), one per line.
+            zh_Hans: 每行一个，非必填。
+          label:
+            en_US: Filename of the output file
+            ja_JP: Filename of the output file
+            pt_BR: Filename of the output file
+            zh_Hans: 输出文件名
+          llm_description: ''
+          max: null
+          min: null
+          name: output_filename
+          options: []
+          placeholder: null
+          precision: null
+          required: false
+          scope: null
+          template: null
+          type: string
+        - auto_generate: null
+          default: '
+
+
+            '
+          form: llm
+          human_description:
+            en_US: Support multiple segments of Base64 encoded text, split by the
+              delimiter and decode them into multiple files sequentially
+            ja_JP: Support multiple segments of Base64 encoded text, split by the
+              delimiter and decode them into multiple files sequentially
+            pt_BR: Support multiple segments of Base64 encoded text, split by the
+              delimiter and decode them into multiple files sequentially
+            zh_Hans: 支持多段Base64编码文本，按分隔符拆分后依次解码为多个文件
+          label:
+            en_US: Delimiter
+            ja_JP: Delimiter
+            pt_BR: Delimiter
+            zh_Hans: 分隔符
+          llm_description: A tool for decoding Base64-encoded text to file file
+          max: null
+          min: null
+          name: splitter_str
+          options: []
+          placeholder: null
+          precision: null
+          required: true
+          scope: null
+          template: null
+          type: string
+        params:
+          encoded_text: ''
+          output_filename: ''
+          splitter_str: ''
+        plugin_id: bowenliang123/base64_codec
+        plugin_unique_identifier: bowenliang123/base64_codec:1.0.1@034fdfa9602a2b207c0009adecb8998344dbb4f74a223c88680b477c83ee783b
+        provider_icon: https://nowastechef.work/console/api/workspaces/current/plugin/icon?tenant_id=c32fcc46-4027-48d4-bd89-6a1039337269&filename=cebbda2083c25c484bb939ab05f656c605dfabd2f0ca9c42f767737052b4977a.png
+        provider_id: bowenliang123/base64_codec/base64_codec
+        provider_name: bowenliang123/base64_codec/base64_codec
+        provider_type: builtin
+        selected: false
+        title: Base64 C
+        tool_configurations: {}
+        tool_description: Decode Base64-encoded text to an image file
+        tool_label: Base64 ⮕ Image File(s)
+        tool_name: base64_image_decoder
+        tool_node_version: '2'
+        tool_parameters:
+          encoded_text:
+            type: mixed
+            value: '{{#1768895954412.result#}}'
+          output_filename:
+            type: mixed
+            value: null
+          splitter_str:
+            type: mixed
+            value: \n\n
+        type: tool
+      height: 51
+      id: '1768896171198'
+      position:
+        x: 3927.547676257418
+        y: 297.70804755021953
+      positionAbsolute:
+        x: 3927.547676257418
+        y: 297.70804755021953
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    viewport:
+      x: -756.4993760154796
+      y: 158.57641114855596
+      zoom: 0.3192895214496408
+  rag_pipeline_variables: []

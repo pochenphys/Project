@@ -19,8 +19,13 @@ import re
 from typing import Dict, List, Optional
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
+from contextlib import contextmanager
 from flask import Flask, request, abort
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from urllib3.exceptions import MaxRetryError, SSLError as Urllib3SSLError
+import ssl
 from dotenv import load_dotenv
 import pymysql
 
@@ -85,34 +90,66 @@ dify_client = DifyAPIClient(DIFY_API_KEY, DIFY_API_ENDPOINT)
 image_buffer = defaultdict(list)
 user_timers = {}
 buffer_lock = threading.Lock()
-BUFFER_WAIT_TIME = 10.0  # 緩衝等待時間（秒）
+BUFFER_WAIT_TIME = 1.5  # 緩衝等待時間（秒）
 
 
 class DatabaseManager:
-    """MySQL 資料庫管理器"""
+    """MySQL 資料庫管理器（每次操作後自動關閉連接）"""
     
     def __init__(self, config: Dict):
         self.config = config
-        self.connection = None
+        self.connection = None  # 保留以向後兼容，但建議使用 get_connection()
+    
+    @contextmanager
+    def get_connection(self):
+        """
+        獲取資料庫連接的上下文管理器（使用完自動關閉）
+        
+        使用方式:
+            with db_manager.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    results = cursor.fetchall()
+                    conn.commit()  # 需要手動提交
+        """
+        connection = None
+        try:
+            connection = pymysql.connect(**self.config)
+            yield connection
+        except Exception as e:
+            if connection:
+                try:
+                    connection.rollback()
+                except:
+                    pass
+            raise
+        finally:
+            if connection:
+                try:
+                    connection.close()
+                except:
+                    pass
     
     def connect(self):
-        """連接到 MySQL 資料庫（支援 AWS RDS）"""
+        """
+        連接到 MySQL 資料庫（已廢棄，保留以向後兼容）
+        建議使用 get_connection() 上下文管理器
+        """
         try:
-            print(f"正在連接到 MySQL 資料庫: {self.config.get('host')}:{self.config.get('port')}")
             if 'ssl' in self.config:
-                print("使用 SSL 連接（AWS RDS）")
+                pass  # SSL 連接已啟用
             self.connection = pymysql.connect(**self.config)
-            print("✓ MySQL 連接成功！")
             return True
         except Exception as e:
             print(f"✗ MySQL 連接失敗: {e}")
             import traceback
             traceback.print_exc()
+            self.connection = None
             return False
     
     def insert_food_record(self, username: str, food_name: str, quantity: float = None, storage_time: datetime = None) -> bool:
         """
-        插入食物記錄到 foods 表
+        插入食物記錄到 foods 表（操作完成後自動關閉連接）
         
         Args:
             username: 使用者名稱
@@ -123,33 +160,36 @@ class DatabaseManager:
         Returns:
             bool: 是否成功插入
         """
-        if not self.connection:
-            if not self.connect():
-                return False
-        
         try:
             if storage_time is None:
                 storage_time = datetime.now(TAIWAN_TZ)
             
-            with self.connection.cursor() as cursor:
-                sql = """
-                INSERT INTO foods (username, food_name, quantity, storage_time)
-                VALUES (%s, %s, %s, %s)
-                """
-                cursor.execute(sql, (username, food_name, quantity, storage_time))
-                self.connection.commit()
-                quantity_str = f"{quantity}" if quantity is not None else "未指定"
-                print(f"✓ 資料已存入資料庫: {username} - {food_name} - 數量: {quantity_str} - {storage_time}")
-                return True
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    sql = """
+                    INSERT INTO foods (username, food_name, quantity, storage_time)
+                    VALUES (%s, %s, %s, %s)
+                    """
+                    cursor.execute(sql, (username, food_name, quantity, storage_time))
+                    conn.commit()
+            return True
         except Exception as e:
             print(f"✗ 資料庫插入失敗: {e}")
-            self.connection.rollback()
+            import traceback
+            traceback.print_exc()
             return False
     
     def close(self):
-        """關閉資料庫連接"""
+        """
+        關閉資料庫連接（已廢棄，保留以向後兼容）
+        使用 get_connection() 上下文管理器會自動關閉
+        """
         if self.connection:
-            self.connection.close()
+            try:
+                self.connection.close()
+            except:
+                pass
+            self.connection = None
 
 
 # 初始化資料庫管理器
@@ -166,21 +206,33 @@ def get_user_profile(user_id: str) -> Optional[Dict]:
     Returns:
         Optional[Dict]: 用戶資訊，包含 displayName, userId 等
     """
-    try:
-        url = LINE_PROFILE_URL.format(userId=user_id)
-        headers = {
-            'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        profile = response.json()
-        print(f"✓ 獲取用戶資訊成功: {profile.get('displayName', 'N/A')} ({user_id})")
-        return profile
-    except Exception as e:
-        print(f"✗ 獲取用戶資訊失敗: {e}")
-        return None
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            url = LINE_PROFILE_URL.format(userId=user_id)
+            headers = {
+                'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            profile = response.json()
+            print(f"✓ 獲取用戶資訊成功: {profile.get('displayName', 'N/A')} ({user_id})")
+            return profile
+        except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                print(f"SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                time.sleep(wait_time)
+                continue
+            else:
+                print(f"✗ 獲取用戶資訊失敗（SSL錯誤，已重试{max_retries}次）: {e}")
+                return None
+        except Exception as e:
+            print(f"✗ 獲取用戶資訊失敗: {e}")
+            return None
+    return None
 
 
 def parse_food_items_from_dify_response(dify_response: Dict) -> List[Dict]:
@@ -304,14 +356,11 @@ def add_image_to_buffer(event: Dict) -> bool:
         image_buffer[user_id].append(event)
         buffer_size = len(image_buffer[user_id])
         
-        print(f"圖片事件已加入緩衝區（使用者: {user_id}, 目前: {buffer_size} 張）")
-        
         # 如果有 imageSet 資訊，檢查是否已收集完整
         if image_set:
             total = image_set.get('total')
             if total and buffer_size >= total:
                 # 已收集完整，立即處理
-                print(f"已收集完整圖片組（{buffer_size}/{total}），立即處理")
                 events = image_buffer[user_id].copy()
                 image_buffer[user_id].clear()
                 if user_id in user_timers:
@@ -354,28 +403,21 @@ def process_images(user_id: str, events: List[Dict]):
         for i, event in enumerate(events):
             message_id = event.get('message_id')
             if not message_id:
-                print(f"警告: 事件 {i+1} 缺少訊息 ID，跳過")
                 continue
             
-            print(f"正在下載圖片 {i+1}/{len(events)} (訊息 ID: {message_id})...")
-            image_data = ImageProcessor.download_from_line(message_id, LINE_CHANNEL_ACCESS_TOKEN)
+            image_data = line_client.download_image(message_id)
             
             if not image_data:
-                print(f"警告: 圖片 {i+1} 下載失敗，跳過")
                 continue
             
             # 驗證檔案格式
             if not ImageProcessor.is_valid_image(image_data):
-                print(f"錯誤: 檔案 {i+1} 不是有效的圖片格式")
                 error_msg = "上傳格式錯誤，請重新上傳。"
                 line_client.send_text_message(user_id, error_msg)
                 return
             
-            print(f"✓ 圖片 {i+1} 下載成功 (大小: {len(image_data)} bytes)")
-            
             # 可選 - 調整圖片大小（如果太大）
             if len(image_data) > 5 * 1024 * 1024:  # 5MB
-                print(f"圖片 {i+1} 過大，正在調整大小...")
                 image_data = ImageProcessor.resize_image(image_data, max_size=(1024, 1024))
             
             image_data_list.append(image_data)
@@ -387,13 +429,10 @@ def process_images(user_id: str, events: List[Dict]):
         
         # 步驟 3: 發送圖片到 Dify
         # 設定 freshrecord="True"
-        print(f"正在發送 {len(image_data_list)} 張圖片到 Dify...")
-        
         try:
             # 上傳圖片獲取 file_ids
             file_ids = []
             for i, img_data in enumerate(image_data_list):
-                print(f"正在上傳圖片 {i+1}/{len(image_data_list)} 到 Dify...")
                 # 使用 DifyAPIClient 的私有方法上傳圖片
                 # 注意：如果 _upload_file 不可訪問，可以改用 send_image 方法
                 try:
@@ -401,7 +440,6 @@ def process_images(user_id: str, events: List[Dict]):
                 except AttributeError:
                     # 如果 _upload_file 不可訪問，使用 send_image 方法
                     # 但需要手動構建包含 freshrecord 的請求
-                    print("使用替代方法上傳圖片...")
                     import mimetypes
                     url = f"{dify_client.base_url}/v1/files/upload"
                     headers = {'Authorization': f'Bearer {dify_client.api_key}'}
@@ -418,8 +456,26 @@ def process_images(user_id: str, events: List[Dict]):
                         filename = 'image.jpg'
                     
                     files = {'file': (filename, img_data, mime_type)}
-                    response = requests.post(url, headers=headers, data=data, files=files, timeout=30)
-                    if response.status_code in (200, 201):
+                    
+                    # 添加重试逻辑处理 SSL 错误
+                    max_retries = 3
+                    response = None
+                    for attempt in range(max_retries):
+                        try:
+                            response = requests.post(url, headers=headers, data=data, files=files, timeout=30)
+                            break  # 成功则退出循环
+                        except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+                            if attempt < max_retries - 1:
+                                wait_time = 2 ** attempt
+                                print(f"SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                                time.sleep(wait_time)
+                                continue
+                            else:
+                                print(f"圖片上傳失敗（SSL錯誤，已重试{max_retries}次）: {str(e)}")
+                                file_id = None
+                                break
+                    
+                    if response and response.status_code in (200, 201):
                         body = response.json()
                         file_id = body.get('id')
                     else:
@@ -455,38 +511,48 @@ def process_images(user_id: str, events: List[Dict]):
                 'user': user_id
             }
             
-            print(f"發送工作流請求到 Dify（包含 freshrecord='True'）...")
-            response = requests.post(url, headers=headers, json=payload, timeout=120)
+            # 注意：Dify API 的 blocking 模式有 Cloudflare 的 100 秒限制
+            # 設置 timeout=100 以符合 Cloudflare 限制
+            # 添加重试逻辑处理 SSL 错误
+            max_retries = 3
+            response = None
+            for attempt in range(max_retries):
+                try:
+                    response = requests.post(url, headers=headers, json=payload, timeout=100)
+                    break  # 成功则退出循环
+                except (requests.exceptions.SSLError, Urllib3SSLError, ssl.SSLError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        print(f"SSL 錯誤（嘗試 {attempt + 1}/{max_retries}）: {str(e)}，{wait_time}秒後重試...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"Dify 工作流 API 調用失敗（SSL錯誤，已重试{max_retries}次）: {str(e)}")
+                        raise
+            
+            if response is None:
+                raise Exception("請求失敗：無法建立連接")
+                
             response.raise_for_status()
             
             dify_response = response.json()
-            print(f"✓ Dify 工作流執行成功")
             
             # 檢查 Dify 回傳值是否為特定訊息（找不到食材）
             data = dify_response.get('data', {})
             outputs = data.get('outputs', {}) if isinstance(data, dict) else {}
             text = outputs.get('text', '') if isinstance(outputs, dict) else ''
             
-            # 添加調試信息
-            print(f"[除錯] Dify 回傳文本: {text[:200]}...")
-            
             # 正確的回傳值文本（包含逗号和句号）
             response_message = "此圖片中找不到食材，請換一張圖片再嘗試。"
             
             # 檢查是否包含此回傳值（使用原始文本匹配）
             if response_message in text:
-                print(f"✓ 檢測到回傳值: {response_message}")
                 # 直接回傳給用戶，不進行後續解析和入庫
                 line_client.send_text_message(user_id, response_message)
                 return
-            else:
-                print(f"[除錯] 未檢測到特定回傳值，繼續處理...")
             
             # 步驟 4: 解析多個食物項目（包含名稱和數量）
             food_items = parse_food_items_from_dify_response(dify_response)
-            print(f"解析到 {len(food_items)} 個食物項目")
-            for i, item in enumerate(food_items, 1):
-                print(f"  項目 {i}: {item['food_name']} - 數量: {item['quantity'] if item['quantity'] is not None else '未指定'}")
             
             # 步驟 5: 為每個食物項目存入 MySQL 資料庫
             storage_time = datetime.now(TAIWAN_TZ)
@@ -501,7 +567,6 @@ def process_images(user_id: str, events: List[Dict]):
                 if quantity is None:
                     quantity = 1.0
                     item['quantity'] = 1.0  # 同時更新food_items中的數量，以便後續顯示
-                    print(f"  項目 '{food_name}' 沒有數量，已設為 1")
                 
                 # 使用 user_id 而不是 username 來存儲記錄
                 success = db_manager.insert_food_record(user_id, food_name, quantity, storage_time)
@@ -529,7 +594,6 @@ def process_images(user_id: str, events: List[Dict]):
             confirm_message += f"👤 使用者：{username}"
             
             line_client.send_text_message(user_id, confirm_message)
-            print(f"✓ 已發送確認訊息給用戶 {username}")
             
         except Exception as e:
             print(f"處理圖片失敗: {e}")
@@ -646,9 +710,14 @@ def main():
     
     args = parser.parse_args()
     
-    # 連接資料庫
-    if not db_manager.connect():
-        print("警告: 資料庫連接失敗，部分功能可能無法使用")
+    # 測試資料庫連接（使用上下文管理器）
+    try:
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+        print("✓ 資料庫連接測試成功")
+    except Exception as e:
+        print(f"警告: 資料庫連接測試失敗，部分功能可能無法使用: {e}")
     
     print("=" * 60)
     print("食物記錄系統 (record.py)")
@@ -665,8 +734,13 @@ def main():
     try:
         app.run(host=args.host, port=args.port, debug=args.debug)
     finally:
-        # 關閉資料庫連接
-        db_manager.close()
+        # 注意：現在使用上下文管理器，每次操作後自動關閉連接
+        # 不需要手動關閉，但保留此處以向後兼容
+        if db_manager.connection:
+            try:
+                db_manager.close()
+            except:
+                pass
 
 
 if __name__ == '__main__':
